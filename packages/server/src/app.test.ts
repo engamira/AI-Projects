@@ -31,6 +31,13 @@ describe('M0 check endpoints', () => {
     const ok = await app.inject({ url: '/api/m0/probe', headers: { authorization: 'Bearer secret-token' } });
     expect(ok.statusCode).toBe(200);
   });
+  it('sentry-test requires the token and otherwise returns a generic 500', async () => {
+    const app = await buildApp({ checkToken: 't' });
+    expect((await app.inject({ method: 'POST', url: '/api/m0/sentry-test' })).statusCode).toBe(401);
+    const res = await app.inject({ method: 'POST', url: '/api/m0/sentry-test', headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ error: 'internal_error' });
+  });
   it('screenshot endpoint requires the token', async () => {
     const app = await buildApp({ checkToken: 't', screenshot: async () => ({ bytes: 1, ms: 1, rssMB: 1, freeMemMB: 1 }) });
     expect((await app.inject('/api/m0/screenshot')).statusCode).toBe(401);

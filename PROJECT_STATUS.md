@@ -19,7 +19,8 @@ Last updated: 2026-10-15
 - Local Chromium screenshot via Playwright: works (7 KB PNG, process RSS 124 MB, first launch 33 s incl. warm-up). Hosted memory NOT yet measured.
 - Local against Neon (2026-10-15): migration 0001 applied; /health database ok; probe row inserted, server restarted, row still present; unauthenticated probe returns 401; built web app served (200).
 - Code pushed to https://github.com/engamira/AI-Projects branch `main` (remote `master` with README untouched). CI workflow kept at ci/github-ci.yml because the stored GitHub login lacks `workflow` scope; move to .github/workflows/ci.yml after re-authorising.
-- NOT yet verified: Docker build (Docker not installed locally; will build on Render), HTTPS page, restart/redeploy persistence, Sentry event delivery.
+- Hosted (https://ai-projects-9vgh.onrender.com, 2026-10-15): HTTPS 200; /health database ok; Playwright screenshot ok on current Render plan (4.2 s, process RSS ~145 MB; single run); probe rows 1-2 present after manual redeploy; probe endpoints 401 without token. Docker build succeeded on Render.
+- NOT yet verified (superseded items above): Docker build (Docker not installed locally; will build on Render), HTTPS page, restart/redeploy persistence, Sentry event delivery.
 
 ## Blockers / needed from user
 - User to create the Render web service from the GitHub repo (branch `main`, Docker) and enter DATABASE_URL, SENTRY_DSN, M0_CHECK_TOKEN there.
