@@ -1,29 +1,46 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { HealthResponse } from '@cl/shared';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { SessionProvider, useSession } from './session';
+import { AcceptInvitePage, EnrollPage, LoginPage, VerifyPage } from './pages/auth';
+import { AccountPage, ActivityPage, HomePage, Shell, UsersPage } from './pages/app';
+import './styles.css';
 
-function App() {
-  const [health, setHealth] = useState<HealthResponse | 'loading' | 'unreachable'>('loading');
-  useEffect(() => {
-    fetch('/health')
-      .then((r) => r.json() as Promise<HealthResponse>)
-      .then(setHealth)
-      .catch(() => setHealth('unreachable'));
-  }, []);
+function Gate() {
+  const { me, can } = useSession();
+  if (!me) return <div className="center-wrap"><p>Loading…</p></div>;
+
+  if (me.stage === 'none') {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/accept-invite" element={<AcceptInvitePage />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+  // Password accepted but second factor not finished yet
+  if (me.stage === 'password') return me.next === 'enroll_2fa' ? <EnrollPage /> : <VerifyPage />;
+
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 560, margin: '4rem auto', padding: '0 16px' }}>
-      <h1>Campaign LEGO</h1>
-      <p>Milestone M0 – hosting skeleton.</p>
-      <p>
-        Server status:{' '}
-        <strong>{typeof health === 'string' ? health : `${health.status} (database: ${health.database})`}</strong>
-      </p>
-    </main>
+    <Routes>
+      <Route element={<Shell />}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/account" element={<AccountPage />} />
+        {can('users.manage') && <Route path="/admin/users" element={<UsersPage />} />}
+        {can('activity.view') && <Route path="/admin/activity" element={<ActivityPage />} />}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
   );
 }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <BrowserRouter>
+      <SessionProvider>
+        <Gate />
+      </SessionProvider>
+    </BrowserRouter>
   </StrictMode>,
 );

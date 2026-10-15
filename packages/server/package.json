@@ -5,23 +5,34 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
+    "create-admin": "tsx --env-file-if-exists=../../.env src/cli/create-admin.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "tsx e2e/smoke.ts"
   },
   "dependencies": {
     "@cl/shared": "^0.0.0",
+    "@fastify/cookie": "^11.1.3",
+    "@fastify/helmet": "^13.2.0",
+    "@fastify/rate-limit": "^11.2.1",
     "@fastify/static": "^10.1.6",
+    "@node-rs/argon2": "^2.2.2",
     "@sentry/node": "^11.8.0",
     "fastify": "^5.12.7",
+    "fastify-plugin": "^6.0.1",
+    "otpauth": "^9.5.2",
     "pg": "^8.23.1",
-    "playwright": "^1.64.1"
+    "playwright": "^1.64.1",
+    "qrcode": "^1.5.4",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"

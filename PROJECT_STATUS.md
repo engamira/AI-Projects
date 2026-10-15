@@ -1,39 +1,32 @@
 # PROJECT STATUS
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16
 
-## Current milestone: M0 Foundations/hosting — COMPLETE except CI (needs GitHub `workflow` scope)
-- Sentry verified 2026-10-16: deliberate test error reached the `campaign-lego` project (user confirmed). Event-detail privacy (no body/headers/cookies/user) not yet inspected by user. Test endpoint removed afterwards.
-- Bug found and fixed during the check: error handler turned 4xx client errors into 500s and reported them; now 4xx keep their status and are not sent to Sentry.
-- Remaining: move ci/github-ci.yml to .github/workflows/ci.yml after `gh auth refresh -s workflow`.
+## Milestones
+- **M0 Foundations/hosting: COMPLETE** (2026-10-15). Hosted at https://ai-projects-9vgh.onrender.com (Render, Neon Postgres). Verified: HTTPS, /health, Playwright screenshot on host, data survives redeploy, Sentry receives errors with no body/headers/cookies/user, GitHub Actions CI.
+- **M1 Auth, roles, 2FA, notifications: BUILT AND TESTED LOCALLY, NOT YET DEPLOYED** (waiting on Render environment variables, see Blockers).
 
-## Completed
-- Plan, CLAUDE.md, status files.
-- Node 24 LTS present (v24.22). Note: not on the PATH of Claude's terminal; commands prepend `C:\Program Files\nodejs`, and git needs `C:\Program Files\Git\cmd`.
-- Monorepo (`packages/shared|server|web`), git repo initialised (no commits yet).
-- Server: Fastify `/health` (reports database ok/error/not_configured), token-protected M0 endpoints (`/api/m0/probe` GET/POST, `/api/m0/screenshot`; disabled unless `M0_CHECK_TOKEN` set), SQL migration runner (`schema_migrations` table, transactional), Sentry with user info/cookies/headers/bodies/query strings disabled.
-- Web: Vite+React placeholder showing server status.
-- Dockerfile (Playwright v1.64.1 image), render.yaml (plan: starter, preDeploy migration), GitHub Actions CI.
-- Neon agent skills installed into `.claude/skills` (user-requested).
+## M1 delivered (code complete)
+- Roles Admin / Builder / QA reviewer as capability bundles (`packages/shared`); server checks capabilities only. Builder and Admin can send an approved campaign (approval must come from a different person; enforced when campaigns exist in M6).
+- Invite-only accounts; Admin creates users and gets a one-time 72 h link (no email yet). Password reset = new link. Admin can change role, disable/enable, reset 2FA, unlock. Cannot change own role or disable self.
+- Sign-in: password (Argon2id, 12+ chars, lockout after 5 failures for 15 min) then mandatory authenticator-app 2FA (QR + manual key, 10 single-use recovery codes, no code replay). Session rotated after 2FA; 2 h idle / 12 h absolute expiry; hardened cookie; CSRF token + origin check; rate limiting; security headers.
+- Every /api route declares its access level or is refused (deny by default).
+- In-app notifications (bell) and append-only activity history (database trigger blocks edits/deletes); Admin Users and Activity pages; Account page (change password).
+- `npm run create-admin -- <email> "<Name>"` creates the first Admin and prints a one-time link.
+- M0 test endpoints removed (probe/screenshot); screenshot code returns in M5.
 
-## Checks run
-- `npm run build`, `npm run typecheck`: pass.
-- `npm test`: 6/6 pass (health states, token protection).
-- Local Chromium screenshot via Playwright: works (7 KB PNG, process RSS 124 MB, first launch 33 s incl. warm-up). Hosted memory NOT yet measured.
-- Local against Neon (2026-10-15): migration 0001 applied; /health database ok; probe row inserted, server restarted, row still present; unauthenticated probe returns 401; built web app served (200).
-- Code pushed to https://github.com/engamira/AI-Projects branch `main` (remote `master` with README untouched). CI workflow kept at ci/github-ci.yml because the stored GitHub login lacks `workflow` scope; move to .github/workflows/ci.yml after re-authorising.
-- Hosted (https://ai-projects-9vgh.onrender.com, 2026-10-15): HTTPS 200; /health database ok; Playwright screenshot ok on current Render plan (4.2 s, process RSS ~145 MB; single run); probe rows 1-2 present after manual redeploy; probe endpoints 401 without token. Docker build succeeded on Render.
-- NOT yet verified (superseded items above): Docker build (Docker not installed locally; will build on Render), HTTPS page, restart/redeploy persistence, Sentry event delivery.
+## Checks run (2026-10-16)
+- Build, typecheck: pass.
+- 40 automated tests pass against a throwaway schema in Neon: role definitions match the spec; every route declares access; role x route permission matrix including direct API calls; unauthenticated and half-signed-in sessions refused; login/lockout/2FA/recovery codes/replay; session expiry; CSRF/origin; password change; invitations (single use, expiry, reissue); user management safety rules; append-only log; notification isolation.
+- Mutation check: deliberately granting QA reviewers `users.manage` made 2 tests fail, then reverted.
+- 11 browser checks pass (Playwright, real built app): sign-in, wrong password message, 2FA, invitation, enrolment on a 390 px phone screen, recovery codes gate, Builder cannot open Users page, notification bell, activity history, sign-out, no horizontal overflow.
+- NOT yet verified: hosted deployment of M1; first Admin created in the hosted database; CI run of the new Linux job (Postgres service + e2e); real authenticator app scan.
 
 ## Blockers / needed from user
-- User to create the Render web service from the GitHub repo (branch `main`, Docker) and enter DATABASE_URL, SENTRY_DSN, M0_CHECK_TOKEN there.
-- Sentry event delivery not yet confirmed (DSN is in .env).
-- Resend key pasted into chat on 2026-10-15 was revoked by the user. Not needed until M7.
-- Domain purchase needed before M7. Cloudflare account exists (R2 needed from M3).
-- Pending suggestion decision: none (Sentry and 2FA approved).
-
-## M0 acceptance remaining
-HTTPS page loads on Render; /health shows database ok; Playwright screenshot succeeds on the host (decide starter vs 2 GB plan from result); probe row survives restart and redeploy.
+1. Add to Render environment: `APP_SECRET_KEY` (copy the value from local `.env`; local and hosted share one database, so it must be identical) and `APP_BASE_URL=https://ai-projects-9vgh.onrender.com`. Optionally delete `M0_CHECK_TOKEN`. The server refuses to start without APP_SECRET_KEY, so deploy only after this.
+2. After deploy, user runs `create-admin` locally (with `APP_BASE_URL` set to the hosted URL) so the one-time link never appears in chat.
+3. Domain purchase before M7. Cloudflare R2 needed from M3.
+- Local dev and hosted app currently share ONE Neon database (including real users). Recommend a separate Neon dev branch before M2; tests already use isolated throwaway schemas.
 
 ## Next
-Finish M0 hosted checks, then M1 (auth, roles, TOTP 2FA, notifications).
+Deploy M1 and verify hosted; then M2 Editor core (block model, MJML render, drag-and-drop, undo/redo, autosave, revisions).

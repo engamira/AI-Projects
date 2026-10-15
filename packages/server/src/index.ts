@@ -1,18 +1,17 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
+import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { initSentry, Sentry } from './sentry.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 initSentry(process.env.SENTRY_DSN);
 
-const db = process.env.DATABASE_URL ? createPool(process.env.DATABASE_URL) : undefined;
-const app = await buildApp({
-  db,
-  checkToken: process.env.M0_CHECK_TOKEN,
-  webDir: path.resolve(here, '../../web/dist'),
-});
+if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
+const config = loadConfig();
+const db = createPool(process.env.DATABASE_URL);
+const app = await buildApp({ db, config, webDir: path.resolve(here, '../../web/dist') });
 
 const port = Number(process.env.PORT ?? 3000);
 try {
@@ -25,7 +24,7 @@ try {
 
 const stop = async () => {
   await app.close();
-  await db?.end();
+  await db.end();
   await Sentry.close(2000);
   process.exit(0);
 };

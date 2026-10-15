@@ -1,87 +1,69 @@
-import { timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
-import type { HealthResponse, ProbeResponse } from '@cl/shared';
+import Fastify, { type FastifyInstance } from 'fastify';
+import { ZodError } from 'zod';
+import type { HealthResponse } from '@cl/shared';
+import accessPlugin from './access.js';
+import type { AppConfig } from './config.js';
 import type { Db } from './db.js';
+import { authRoutes } from './routes/auth.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { userRoutes } from './routes/users.js';
 import { Sentry } from './sentry.js';
-import { screenshotCheck, type ScreenshotCheck } from './screenshot.js';
 
 export type AppOptions = {
-  db?: Db;
-  checkToken?: string;
+  db: Db;
+  config: AppConfig;
   webDir?: string;
-  screenshot?: () => Promise<ScreenshotCheck>;
+  /** Tests use this to list every registered route and check its access declaration. */
+  onRoute?: (route: { method: string | string[]; url: string; access?: string }) => void;
 };
 
-function tokenOk(req: FastifyRequest, expected: string | undefined): boolean {
-  if (!expected) return false; // endpoints are disabled unless a token is configured
-  const given = String(req.headers.authorization ?? '').replace(/^Bearer /, '');
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
-  const shot = opts.screenshot ?? screenshotCheck;
+export async function buildApp({ db, config, webDir, onRoute }: AppOptions): Promise<FastifyInstance> {
+  const app = Fastify({ logger: process.env.NODE_ENV !== 'test', trustProxy: true });
+  if (onRoute) {
+    app.addHook('onRoute', (r) =>
+      onRoute({ method: r.method, url: r.url, access: (r.config as { access?: string } | undefined)?.access }),
+    );
+  }
 
   app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, _req, reply) => {
-    // Client mistakes (bad media type, malformed JSON, ...) keep their 4xx status and are not reported.
+    if (err instanceof ZodError) {
+      return void reply.status(400).send({ error: 'invalid_request', message: err.issues[0]?.message ?? 'Invalid request.' });
+    }
+    // Client mistakes (bad media type, malformed JSON, rate limit, ...) keep their 4xx status and are not reported.
     if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
-      return void reply.status(err.statusCode).send({ error: err.code ?? 'bad_request' });
+      return void reply.status(err.statusCode).send({ error: err.code ?? 'bad_request', message: err.message });
     }
     Sentry.captureException(err);
     app.log.error(err);
     void reply.status(500).send({ error: 'internal_error' });
   });
 
+  await app.register(fastifyHelmet);
+  await app.register(fastifyCookie);
+  if (config.rateLimit) await app.register(fastifyRateLimit, { global: true, max: 300, timeWindow: '1 minute' });
+  await app.register(accessPlugin, { db, config });
+
   app.get('/health', async (): Promise<HealthResponse> => {
-    let database: HealthResponse['database'] = 'not_configured';
-    if (opts.db) {
-      try {
-        await opts.db.query('SELECT 1');
-        database = 'ok';
-      } catch {
-        database = 'error';
-      }
+    let database: HealthResponse['database'] = 'ok';
+    try {
+      await db.query('SELECT 1');
+    } catch {
+      database = 'error';
     }
-    return {
-      status: database === 'error' ? 'degraded' : 'ok',
-      database,
-      time: new Date().toISOString(),
-    };
+    return { status: database === 'error' ? 'degraded' : 'ok', database, time: new Date().toISOString() };
   });
 
-  app.post<{ Body: { note?: string } }>('/api/m0/probe', async (req, reply) => {
-    if (!tokenOk(req, opts.checkToken)) return reply.status(401).send({ error: 'unauthorized' });
-    if (!opts.db) return reply.status(503).send({ error: 'database_not_configured' });
-    const note = String(req.body?.note ?? 'probe').slice(0, 200);
-    const r = await opts.db.query<{ id: number; note: string; created_at: Date }>(
-      'INSERT INTO m0_probe (note) VALUES ($1) RETURNING id, note, created_at',
-      [note],
-    );
-    const row = r.rows[0]!;
-    const out: ProbeResponse = { id: row.id, note: row.note, createdAt: row.created_at.toISOString() };
-    return out;
-  });
+  authRoutes(app, db, config);
+  userRoutes(app, db, config);
+  notificationRoutes(app, db);
 
-  app.get('/api/m0/probe', async (req, reply) => {
-    if (!tokenOk(req, opts.checkToken)) return reply.status(401).send({ error: 'unauthorized' });
-    if (!opts.db) return reply.status(503).send({ error: 'database_not_configured' });
-    const r = await opts.db.query<{ id: number; note: string; created_at: Date }>(
-      'SELECT id, note, created_at FROM m0_probe ORDER BY id',
-    );
-    return r.rows.map((x): ProbeResponse => ({ id: x.id, note: x.note, createdAt: x.created_at.toISOString() }));
-  });
-
-  app.get('/api/m0/screenshot', async (req, reply) => {
-    if (!tokenOk(req, opts.checkToken)) return reply.status(401).send({ error: 'unauthorized' });
-    return shot();
-  });
-
-  if (opts.webDir && existsSync(opts.webDir)) {
-    await app.register(fastifyStatic, { root: opts.webDir });
+  if (webDir && existsSync(webDir)) {
+    await app.register(fastifyStatic, { root: webDir });
     app.setNotFoundHandler((req, reply) => {
       if (req.method === 'GET' && !req.url.startsWith('/api/')) return reply.sendFile('index.html');
       return reply.status(404).send({ error: 'not_found' });

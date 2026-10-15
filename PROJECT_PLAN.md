@@ -16,7 +16,8 @@ Non-technical marketers build an email from drag-and-drop blocks, preview it, ru
 | Domain | User buys a cheap, reputable domain (~$10-12/yr; avoid spam-prone cheap TLDs). Send from a subdomain, e.g. mail.<domain>. SPF/DKIM/DMARC configured in M7. Until then, sends only to the owner's own address. |
 | Footer address | Dubai Silicon Oasis - pineapple tower G101 - Dubai - United Arab Emirates |
 | Frontend | React, TypeScript, Vite, dnd-kit, Zustand + immer patches (undo/redo), TanStack Query |
-| Backend | Node 22, Fastify, Zod, Drizzle ORM + SQL migrations, pg-boss (Postgres job queue) |
+| Backend | Node 24 LTS, Fastify, Zod, plain SQL migrations + typed `pg` queries (Drizzle ORM deferred: it added nothing for M0-M1; revisit if queries get complex), pg-boss (Postgres job queue, from M7) |
+| Auth details (M1) | Argon2id passwords (12+ chars, lockout 5 failures/15 min); TOTP 2FA required for all users (authenticator app, 10 single-use recovery codes, codes cannot be replayed); sessions: random token stored hashed, httpOnly cookie, 2 h idle / 12 h absolute, new token after 2FA; CSRF token + origin check on all state-changing calls; every /api route must declare an access level (deny by default); TOTP secrets encrypted with APP_SECRET_KEY (AES-256-GCM); activity log is append-only (database trigger). Invitations are one-time 72 h links shown to the Admin (no email sending until Resend in M7). |
 | Email rendering | MJML server-side; sanitize-html for custom HTML; Papa Parse for CSV |
 | QA browser | Playwright (screenshots, overflow/clipping). Not real email-client testing. |
 | Auth | Invite-only email+password (Argon2), server sessions in Postgres, httpOnly/Secure/SameSite cookies, CSRF protection, rate limiting. No public signup. |
