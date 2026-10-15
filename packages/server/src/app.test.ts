@@ -31,18 +31,17 @@ describe('M0 check endpoints', () => {
     const ok = await app.inject({ url: '/api/m0/probe', headers: { authorization: 'Bearer secret-token' } });
     expect(ok.statusCode).toBe(200);
   });
-  it('sentry-test requires the token and otherwise returns a generic 500', async () => {
-    const app = await buildApp({ checkToken: 't' });
-    expect((await app.inject({ method: 'POST', url: '/api/m0/sentry-test' })).statusCode).toBe(401);
-    const res = await app.inject({ method: 'POST', url: '/api/m0/sentry-test', headers: { authorization: 'Bearer t' } });
+  it('returns a generic 500 for unexpected server errors', async () => {
+    const app = await buildApp({ db: badDb, checkToken: 't' });
+    const res = await app.inject({ url: '/api/m0/probe', headers: { authorization: 'Bearer t' } });
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ error: 'internal_error' });
   });
   it('keeps client errors as 4xx instead of 500', async () => {
-    const app = await buildApp({ checkToken: 't' });
+    const app = await buildApp({ db: okDb, checkToken: 't' });
     const res = await app.inject({
       method: 'POST',
-      url: '/api/m0/sentry-test',
+      url: '/api/m0/probe',
       headers: { authorization: 'Bearer t', 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'a=1',
     });

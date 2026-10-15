@@ -80,12 +80,6 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     return shot();
   });
 
-  // M0 check: raises a deliberate error so we can confirm it reaches Sentry.
-  app.post('/api/m0/sentry-test', async (req, reply) => {
-    if (!tokenOk(req, opts.checkToken)) return reply.status(401).send({ error: 'unauthorized' });
-    throw new Error('M0 Sentry test error (deliberate)');
-  });
-
   if (opts.webDir && existsSync(opts.webDir)) {
     await app.register(fastifyStatic, { root: opts.webDir });
     app.setNotFoundHandler((req, reply) => {

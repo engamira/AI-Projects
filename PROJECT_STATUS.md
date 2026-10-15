@@ -2,7 +2,10 @@
 
 Last updated: 2026-10-15
 
-## Current milestone: M0 Foundations/hosting — IN PROGRESS (local part done, hosted part blocked on accounts)
+## Current milestone: M0 Foundations/hosting — COMPLETE except CI (needs GitHub `workflow` scope)
+- Sentry verified 2026-10-16: deliberate test error reached the `campaign-lego` project (user confirmed). Event-detail privacy (no body/headers/cookies/user) not yet inspected by user. Test endpoint removed afterwards.
+- Bug found and fixed during the check: error handler turned 4xx client errors into 500s and reported them; now 4xx keep their status and are not sent to Sentry.
+- Remaining: move ci/github-ci.yml to .github/workflows/ci.yml after `gh auth refresh -s workflow`.
 
 ## Completed
 - Plan, CLAUDE.md, status files.
