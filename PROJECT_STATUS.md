@@ -17,13 +17,14 @@ Last updated: 2026-10-15
 - `npm run build`, `npm run typecheck`: pass.
 - `npm test`: 6/6 pass (health states, token protection).
 - Local Chromium screenshot via Playwright: works (7 KB PNG, process RSS 124 MB, first launch 33 s incl. warm-up). Hosted memory NOT yet measured.
-- NOT yet verified: database connection/migration against Neon, Docker build (Docker not installed locally; will build on Render), HTTPS page, restart/redeploy persistence, Sentry event delivery.
+- Local against Neon (2026-10-15): migration 0001 applied; /health database ok; probe row inserted, server restarted, row still present; unauthenticated probe returns 401; built web app served (200).
+- Code pushed to https://github.com/engamira/AI-Projects branch `main` (remote `master` with README untouched). CI workflow kept at ci/github-ci.yml because the stored GitHub login lacks `workflow` scope; move to .github/workflows/ci.yml after re-authorising.
+- NOT yet verified: Docker build (Docker not installed locally; will build on Render), HTTPS page, restart/redeploy persistence, Sentry event delivery.
 
 ## Blockers / needed from user
-- Neon database connection string -> local `.env` as DATABASE_URL (user pastes it only in .env).
-- Sentry DSN (project `campaign-lego` in org `amira-soudy`) -> `.env` / Render. Unknown what "run code ec18af2a73" is for.
-- GitHub repo URL so code can be pushed and Render can deploy.
-- SECURITY: a Resend API key was pasted into chat on 2026-10-15; user told to revoke and recreate it. Not saved anywhere. Not needed until M7.
+- User to create the Render web service from the GitHub repo (branch `main`, Docker) and enter DATABASE_URL, SENTRY_DSN, M0_CHECK_TOKEN there.
+- Sentry event delivery not yet confirmed (DSN is in .env).
+- Resend key pasted into chat on 2026-10-15 was revoked by the user. Not needed until M7.
 - Domain purchase needed before M7. Cloudflare account exists (R2 needed from M3).
 - Pending suggestion decision: none (Sentry and 2FA approved).
 
