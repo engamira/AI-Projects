@@ -38,6 +38,16 @@ describe('M0 check endpoints', () => {
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ error: 'internal_error' });
   });
+  it('keeps client errors as 4xx instead of 500', async () => {
+    const app = await buildApp({ checkToken: 't' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/m0/sentry-test',
+      headers: { authorization: 'Bearer t', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'a=1',
+    });
+    expect(res.statusCode).toBe(415);
+  });
   it('screenshot endpoint requires the token', async () => {
     const app = await buildApp({ checkToken: 't', screenshot: async () => ({ bytes: 1, ms: 1, rssMB: 1, freeMemMB: 1 }) });
     expect((await app.inject('/api/m0/screenshot')).statusCode).toBe(401);

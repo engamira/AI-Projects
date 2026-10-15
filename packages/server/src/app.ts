@@ -26,7 +26,11 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
   const shot = opts.screenshot ?? screenshotCheck;
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, _req, reply) => {
+    // Client mistakes (bad media type, malformed JSON, ...) keep their 4xx status and are not reported.
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      return void reply.status(err.statusCode).send({ error: err.code ?? 'bad_request' });
+    }
     Sentry.captureException(err);
     app.log.error(err);
     void reply.status(500).send({ error: 'internal_error' });
