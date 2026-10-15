@@ -1,0 +1,16 @@
+# Render Blueprint. Secrets are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: campaign-lego
+    runtime: docker
+    # M0 will measure Chromium memory; upgrade to "standard" (2 GB) if the screenshot check fails on 512 MB.
+    plan: starter
+    healthCheckPath: /health
+    preDeployCommand: node packages/server/dist/migrate.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: M0_CHECK_TOKEN
+        sync: false
