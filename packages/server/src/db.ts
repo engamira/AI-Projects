@@ -12,6 +12,10 @@ export function createPool(connectionString: string, opts: { schema?: string } =
     // Always verify the server certificate (same behaviour pg applies to sslmode=require, stated explicitly).
     connectionString: connectionString.replace(/sslmode=(require|prefer|verify-ca)/, 'sslmode=verify-full'),
     max: 5,
+    // Fail fast instead of hanging forever when the database is slow or unreachable.
+    connectionTimeoutMillis: 10_000,
+    query_timeout: 30_000,
+    idleTimeoutMillis: 30_000,
     ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: true },
     // Tests isolate each run in its own schema (needs a direct, non-pooled connection).
     ...(opts.schema ? { options: `-c search_path=${opts.schema}` } : {}),

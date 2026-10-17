@@ -53,7 +53,7 @@ export async function buildApp({ db, config, webDir, onRoute }: AppOptions): Pro
   app.get('/health', async (): Promise<HealthResponse> => {
     let database: HealthResponse['database'] = 'ok';
     try {
-      await db.query('SELECT 1');
+      await Promise.race([db.query('SELECT 1'), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]);
     } catch {
       database = 'error';
     }
