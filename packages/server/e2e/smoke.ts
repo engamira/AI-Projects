@@ -54,9 +54,9 @@ try {
 
   // ---- Admin creates a Builder and gets a one-time link
   await a.getByRole('link', { name: 'Users' }).click();
-  await a.getByLabel('Name').fill('Bella Builder');
-  await a.getByLabel('Email').fill('bella@example.test');
-  await a.getByLabel('Role').selectOption('builder');
+  await a.getByLabel('Name', { exact: true }).fill('Bella Builder');
+  await a.getByLabel('Email', { exact: true }).fill('bella@example.test');
+  await a.getByLabel('Role', { exact: true }).selectOption('builder');
   await a.getByRole('button', { name: 'Create and get link' }).click();
   const linkText = await a.locator('.notice code').innerText();
   assert(linkText.startsWith(`${BASE}/accept-invite?token=`), 'invite link shown to the Admin');
