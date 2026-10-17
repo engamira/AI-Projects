@@ -8,19 +8,6 @@ import { CampaignsPage } from './pages/campaigns';
 import { EditorPage } from './editor/EditorPage';
 import './styles.css';
 
-// Color scheme: "?theme=name" previews a scheme and remembers it in this browser (a per-viewer convenience only).
-const THEMES = ['ocean', 'midnight-gold', 'soft-teal', 'coral-night'];
-function applyTheme() {
-  let name: string | null = new URLSearchParams(location.search).get('theme');
-  try {
-    if (name && THEMES.includes(name)) localStorage.setItem('theme', name);
-    else name = localStorage.getItem('theme');
-  } catch {
-    /* storage unavailable: ignore */
-  }
-  if (name && THEMES.includes(name)) document.documentElement.dataset.theme = name;
-}
-applyTheme();
 
 function Gate() {
   const { me, can } = useSession();

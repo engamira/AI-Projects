@@ -1,36 +1,44 @@
+/* Coral Night: the app's color scheme (chosen 2026-10-17). Light by default, dark when the device prefers it. */
 :root {
-  --bg: #f6f7f9;
+  --bg: #faf6f6;
   --surface: #ffffff;
-  --text: #1c2430;
-  --muted: #5b6676;
-  --border: #d9dee6;
-  --accent: #2457d6;
+  --text: #261d24;
+  --muted: #75606d;
+  --border: #eadfe3;
+  --accent: #d63a41;
   --accent-text: #ffffff;
+  --link: #c02a35;
   --danger: #b3261e;
   --ok: #1b7a43;
-  --radius: 8px;
-  --btn-radius: 6px;
-  --link: var(--accent);
-  --topbar-bg: var(--surface);
-  --topbar-text: var(--text);
-  --topbar-active: var(--bg);
-  --topbar-border: var(--border);
+  --radius: 12px;
+  --btn-radius: 999px;
+  --topbar-bg: #2a1f2d;
+  --topbar-text: #fbeff1;
+  --topbar-active: rgba(214, 58, 65, 0.45);
+  --topbar-border: #2a1f2d;
   --panel-bg: var(--surface);
-  --canvas-bg: var(--bg);
+  --canvas-bg: #f0e6e9;
   --heading-font: inherit;
-  --shadow: none;
+  --shadow: 0 2px 8px rgba(38, 29, 36, 0.07);
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --bg: #12161c;
-    --surface: #1b212a;
-    --text: #e8ecf2;
-    --muted: #9aa5b5;
-    --border: #2f3744;
-    --accent: #6c93ff;
-    --accent-text: #0b1020;
+  :root {
+    --bg: #1a1318;
+    --surface: #241a21;
+    --text: #f3e8ec;
+    --muted: #b39ba6;
+    --border: #3a2a33;
+    --accent: #ff6b72;
+    --accent-text: #2a0f12;
+    --link: #ff8f95;
     --danger: #ff8b84;
     --ok: #5fd08c;
+    --topbar-bg: #120c10;
+    --topbar-text: #fbeff1;
+    --topbar-active: rgba(255, 107, 114, 0.3);
+    --topbar-border: #120c10;
+    --canvas-bg: #150f13;
+    --shadow: none;
   }
 }
 * { box-sizing: border-box; }
@@ -181,30 +189,4 @@ label.inline select, label.inline input { width: auto; }
   .editor-grid { grid-template-columns: 1fr; display: flex; flex-direction: column; }
   .panel-left, .panel-right { border: 0; border-bottom: 1px solid var(--border); }
   .panel-center { order: -1; min-height: 60vh; }
-}
-
-/* ---------- Color schemes (light). Chosen scheme becomes the default; ?theme=name previews one. ---------- */
-html[data-theme='ocean'] {
-  --bg: #f1f5fb; --surface: #ffffff; --text: #14213d; --muted: #566883; --border: #d5deec;
-  --accent: #2563eb; --accent-text: #ffffff; --danger: #b3261e; --ok: #1b7a43;
-  --topbar-bg: #0f2a4a; --topbar-text: #eaf1fb; --topbar-active: rgba(255,255,255,.16); --topbar-border: #0f2a4a;
-  --canvas-bg: #e3ebf7; --radius: 10px; --btn-radius: 8px; --shadow: 0 1px 3px rgba(20,33,61,.08);
-}
-html[data-theme='midnight-gold'] {
-  --bg: #f6f4ee; --surface: #ffffff; --text: #1d1b16; --muted: #6b665a; --border: #e3ddcd;
-  --accent: #c99a2e; --accent-text: #1d1b16; --link: #85600c; --danger: #b3261e; --ok: #1b7a43;
-  --topbar-bg: #17181c; --topbar-text: #f5efe0; --topbar-active: rgba(201,154,46,.3); --topbar-border: #17181c;
-  --canvas-bg: #ebe7dc; --radius: 6px; --btn-radius: 4px; --heading-font: Georgia, 'Times New Roman', serif; --shadow: 0 1px 2px rgba(29,27,22,.08);
-}
-html[data-theme='soft-teal'] {
-  --bg: #f2f7f6; --surface: #ffffff; --text: #16312f; --muted: #516d6a; --border: #d3e3e0;
-  --accent: #0f766e; --accent-text: #ffffff; --danger: #b3261e; --ok: #1b7a43;
-  --topbar-bg: #ffffff; --topbar-text: #16312f; --topbar-active: #dcefec; --topbar-border: #d3e3e0;
-  --canvas-bg: #e1eeec; --radius: 14px; --btn-radius: 10px; --heading-font: Georgia, 'Times New Roman', serif; --shadow: 0 2px 8px rgba(22,49,47,.07);
-}
-html[data-theme='coral-night'] {
-  --bg: #faf6f6; --surface: #ffffff; --text: #261d24; --muted: #75606d; --border: #eadfe3;
-  --accent: #d63a41; --accent-text: #ffffff; --link: #c02a35; --danger: #b3261e; --ok: #1b7a43;
-  --topbar-bg: #2a1f2d; --topbar-text: #fbeff1; --topbar-active: rgba(214,58,65,.45); --topbar-border: #2a1f2d;
-  --canvas-bg: #f0e6e9; --radius: 12px; --btn-radius: 999px; --shadow: 0 2px 8px rgba(38,29,36,.07);
 }
