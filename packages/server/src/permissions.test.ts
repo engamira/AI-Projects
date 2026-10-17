@@ -12,7 +12,7 @@ beforeAll(async () => {
 afterAll(() => t.close());
 
 const ZERO_UUID = '00000000-0000-4000-8000-00000000dead';
-const fill = (url: string) => url.replace(':id', ZERO_UUID).replace(':token', 'x'.repeat(24));
+const fill = (url: string) => url.replace(':id', ZERO_UUID).replace(':rid', ZERO_UUID).replace(':token', 'x'.repeat(24));
 const apiRoutes = () =>
   t.routes
     .filter((r) => r.url.startsWith('/api/'))
@@ -26,7 +26,7 @@ describe('role definitions match the agreed specification', () => {
     for (const c of ['qa.review', 'qa.approve', 'users.manage'] as const) expect(caps('builder').has(c)).toBe(false);
   });
   it('QA reviewer can review and approve, but cannot edit, submit or send', () => {
-    expect([...caps('qa_reviewer')].sort()).toEqual(['qa.approve', 'qa.review']);
+    expect([...caps('qa_reviewer')].sort()).toEqual(['campaign.view', 'qa.approve', 'qa.review']);
   });
   it('Admin manages the workspace and can send, but has no review/approval or normal editing capability', () => {
     for (const c of ['users.manage', 'campaign.send', 'html.custom', 'brand.manage', 'rules.manage'] as const) expect(caps('admin').has(c)).toBe(true);

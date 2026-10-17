@@ -72,14 +72,13 @@ function Bell() {
   );
 }
 
-export function Shell() {
+function Topbar() {
   const { me, can, signOut } = useSession();
   return (
-    <>
       <header className="topbar">
         <span className="brand">Campaign LEGO</span>
         <nav aria-label="Main">
-          <NavLink to="/" end>Home</NavLink>
+          <NavLink to="/" end>Campaigns</NavLink>
           {can('users.manage') && <NavLink to="/admin/users">Users</NavLink>}
           {can('activity.view') && <NavLink to="/admin/activity">Activity</NavLink>}
           <NavLink to="/account">Account</NavLink>
@@ -88,8 +87,25 @@ export function Shell() {
         <Bell />
         <button onClick={() => void signOut()}>Sign out</button>
       </header>
+  );
+}
+
+export function Shell() {
+  return (
+    <>
+      <Topbar />
       <main className="page"><Outlet /></main>
     </>
+  );
+}
+
+/** Full-width layout for the email editor. */
+export function WideShell() {
+  return (
+    <div className="wide-shell">
+      <Topbar />
+      <Outlet />
+    </div>
   );
 }
 

@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useSession } from './session';
 import { AcceptInvitePage, EnrollPage, LoginPage, VerifyPage } from './pages/auth';
-import { AccountPage, ActivityPage, HomePage, Shell, UsersPage } from './pages/app';
+import { AccountPage, ActivityPage, Shell, UsersPage, WideShell } from './pages/app';
+import { CampaignsPage } from './pages/campaigns';
+import { EditorPage } from './editor/EditorPage';
 import './styles.css';
 
 function Gate() {
@@ -24,8 +26,11 @@ function Gate() {
 
   return (
     <Routes>
+      <Route element={<WideShell />}>
+        <Route path="/campaigns/:id" element={<EditorPage />} />
+      </Route>
       <Route element={<Shell />}>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<CampaignsPage />} />
         <Route path="/account" element={<AccountPage />} />
         {can('users.manage') && <Route path="/admin/users" element={<UsersPage />} />}
         {can('activity.view') && <Route path="/admin/activity" element={<ActivityPage />} />}

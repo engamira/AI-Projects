@@ -11,7 +11,7 @@
     "create-admin": "tsx --env-file-if-exists=../../.env src/cli/create-admin.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "e2e": "tsx e2e/smoke.ts"
+    "e2e": "tsx e2e/smoke.ts && tsx e2e/editor.ts"
   },
   "dependencies": {
     "@cl/shared": "^0.0.0",
@@ -23,6 +23,7 @@
     "@sentry/node": "^11.8.0",
     "fastify": "^5.12.7",
     "fastify-plugin": "^6.0.1",
+    "mjml": "^5.4.1",
     "otpauth": "^9.5.2",
     "pg": "^8.23.1",
     "playwright": "^1.64.1",

@@ -9,7 +9,9 @@ import type { HealthResponse } from '@cl/shared';
 import accessPlugin from './access.js';
 import type { AppConfig } from './config.js';
 import type { Db } from './db.js';
+import { syncBlockDefinitions } from './blocklib.js';
 import { authRoutes } from './routes/auth.js';
+import { campaignRoutes } from './routes/campaigns.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { userRoutes } from './routes/users.js';
 import { Sentry } from './sentry.js';
@@ -58,9 +60,11 @@ export async function buildApp({ db, config, webDir, onRoute }: AppOptions): Pro
     return { status: database === 'error' ? 'degraded' : 'ok', database, time: new Date().toISOString() };
   });
 
+  await syncBlockDefinitions(db);
   authRoutes(app, db, config);
   userRoutes(app, db, config);
   notificationRoutes(app, db);
+  campaignRoutes(app, db);
 
   if (webDir && existsSync(webDir)) {
     await app.register(fastifyStatic, { root: webDir });

@@ -19,7 +19,7 @@ export class Client {
   csrf: string | undefined;
   constructor(private app: FastifyInstance) {}
 
-  async request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
+  async request(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
     const h: Record<string, string> = { ...headers };
     if (this.cookies.size) h.cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
     if (this.csrf && method !== 'GET' && !('x-csrf-token' in h)) h['x-csrf-token'] = this.csrf;
@@ -41,6 +41,7 @@ export class Client {
   get = (url: string, headers?: Record<string, string>) => this.request('GET', url, undefined, headers);
   post = (url: string, body?: unknown, headers?: Record<string, string>) => this.request('POST', url, body, headers);
   patch = (url: string, body?: unknown) => this.request('PATCH', url, body);
+  put = (url: string, body?: unknown) => this.request('PUT', url, body);
 
   async refreshCsrf(): Promise<void> {
     this.csrf = (await this.get('/api/auth/me')).body.csrfToken;

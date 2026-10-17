@@ -16,6 +16,7 @@ export const CAPABILITIES = [
   'brand.manage',
   'rules.manage',
   'html.custom',
+  'campaign.view',
   'campaign.edit',
   'campaign.submit',
   'campaign.test_send',
@@ -26,9 +27,9 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
-  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'campaign.test_send', 'campaign.send'],
-  builder: ['campaign.edit', 'campaign.submit', 'campaign.test_send', 'campaign.send'],
-  qa_reviewer: ['qa.review', 'qa.approve'],
+  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'campaign.view', 'campaign.test_send', 'campaign.send'],
+  builder: ['campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.test_send', 'campaign.send'],
+  qa_reviewer: ['campaign.view', 'qa.review', 'qa.approve'],
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -109,3 +110,38 @@ export type ActivityDto = {
   details: Record<string, unknown>;
   createdAt: string;
 };
+
+// ---------- Campaigns and block library ----------
+export * from './blocks.js';
+export * from './content.js';
+
+import type { BlockDefinition } from './blocks.js';
+import type { EmailContent } from './content.js';
+
+export type LibraryResponse = { blocks: BlockDefinition[] };
+
+export type CampaignSummary = {
+  id: string;
+  name: string;
+  status: string;
+  createdByName: string | null;
+  updatedAt: string;
+  revisionCount: number;
+};
+
+export type DraftDto = { content: EmailContent; version: number; hash: string; updatedAt: string };
+export type CampaignDto = { id: string; name: string; status: string; draft: DraftDto };
+export type SaveDraftRequest = { content: EmailContent; baseVersion: number };
+export type SaveDraftResponse = { version: number; hash: string; updatedAt: string };
+
+export type RevisionDto = {
+  id: string;
+  number: number;
+  kind: 'created' | 'manual' | 'restore' | 'duplicate';
+  label: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  hash: string;
+  restoredFromNumber: number | null;
+};
+export type PreviewResponse = { html: string; warnings: string[] };
