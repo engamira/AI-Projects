@@ -10,3 +10,4 @@ playwright-report/
 
 DATABASE_URL
 .claude/settings.local.json
+references/theme-options/

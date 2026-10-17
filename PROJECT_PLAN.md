@@ -1,7 +1,7 @@
 # PROJECT PLAN — Campaign LEGO (email campaign app)
 
-Status of this document: consolidated v1 specification. Supersedes the earlier brief (simulated sending, local-only, SQLite, Editor/Sender roles).
-Prices are approximate and must be re-verified at signup.
+Status of this document: consolidated v1 specification, last updated 2026-10-17 (M0-M2 complete; M3 next). Supersedes the earlier brief (simulated sending, local-only, SQLite, Editor/Sender roles).
+Prices are approximate and must be re-verified at signup. Progress, checks and blockers live in PROJECT_STATUS.md.
 
 ## 1. Goal
 Non-technical marketers build an email from drag-and-drop blocks, preview it, run QA, submit it for independent review, filter an audience of up to 10 contacts, and send real emails through one provider. Hosted online with secure sign-in.
@@ -9,7 +9,10 @@ Non-technical marketers build an email from drag-and-drop blocks, preview it, ru
 ## 2. Decisions
 | Area | Decision |
 |---|---|
-| Hosting | Render web service (Docker, Playwright base image). Size (Starter ~$7 vs 2 GB ~$25) decided by measuring Chromium memory in M0. |
+| Hosting | Render web service (Docker, Playwright base image), 512 MB plan. M0 measured Chromium screenshot at ~145 MB process memory and MJML rendering peaks ~190 MB, so no upgrade needed; re-check under QA load in M5 (fallback: 2 GB plan). |
+| Environments | Two separate Neon databases: the live app uses the production one (configured only in Render); local development and tests use a separate dev database (`.env`). Automated tests run in throwaway schemas. |
+| Migrations | SQL files applied automatically at server start, under a database advisory lock, so several instances can start together safely. |
+| App look and feel | The app's own screens (not the emails) get a visual theme. Four color schemes are shown to the user to choose from (2026-10-17); chosen theme becomes the default. |
 | Database | Neon Postgres (replaces SQLite). Nightly pg_dump to R2. |
 | Assets / screenshots | Cloudflare R2 |
 | Email provider | Resend (server-side API, idempotency keys, signed webhooks). Mock adapter for tests only. |
@@ -63,7 +66,11 @@ Exceptions: ignore once; scoped (block, campaign, brand); admin-only rule disabl
 ## 6. Editor and content
 - Library blocks are immutable, versioned originals. Dropping creates an independent instance (full props copy + sourceDefinitionId/version). Edits never alter library or other emails.
 - Shared blocks: header/logo, hero, text, image, button, two-column, divider, spacer, social, footer. Specialty: travel (destinations, fares, offers, booking CTA); events (date/location, agenda, speakers, registration CTA); cosmetics (products, benefits, offers, shopping CTA).
-- Drag, reorder, duplicate, delete, undo/redo, autosave, campaign duplication, revision restore (restore creates a new revision).
+- Drag, reorder, duplicate, delete, undo/redo, autosave, campaign duplication, revision restore (restore creates a new revision). (Built in M2.)
+- **Link alias (built 2026-10-17):** every link field in every block has an alias field directly under it: an internal name (e.g. "Hero button") that recipients never see and that is not written into the email HTML; used by QA messages and click reports. Optional, so older emails still open. Blocks with links are library version 2.
+- **Specialty blocks (M3), built as original blocks following the chosen layouts:** travel (racoon layout): destination cards, fares table, travel offer banner, booking button. Events (christmas layout): date and location banner, agenda list, speaker cards, registration button. Cosmetics (sphero-mini layout): product cards, benefits strip, promotional offer band, shopping button. Each is editable per email, has link aliases, and never alters the library original.
+- **Shared brand header and footer (M3, user decision 2026-10-17: one shared header and footer):** one header and one footer defined in Brand settings (Admin, `brand.manage`): logo, brand name, links, social links, postal address, unsubscribe wording. Every campaign shows them in place; Builders cannot edit them inside a campaign. Rules that keep review meaningful: (1) drafts follow the latest brand header/footer; (2) every revision that is submitted, approved or sent stores the exact resolved header/footer it used, so history is never rewritten; (3) if the brand header/footer changes while a campaign is approved but not sent, the approval is cancelled and it needs re-review, as with any content edit; (4) each brand change is versioned and recorded in the activity history; (5) the unsubscribe link and postal address live in the shared footer so they cannot be removed from one email. The rest of the library keeps the independent-instance rule.
+- **Preview layout (M3, chosen "A+C" 2026-10-17):** (A) a "Live preview" toggle shows the canvas and a phone-width real-HTML preview side by side (phone/desktop switch; block list collapses to icons; preview refreshes about a second after the last edit, from the saved draft); (C) a full-screen preview shows phone and desktop side by side, width selector (320-1024), pop-out to a second window, "Preview as..." recipient picker (M3). Before Submit for QA (M6) this full-screen view opens as a required step and the Builder confirms it for that exact revision; QA findings are highlighted on the same view (M5).
 - Brand settings, asset library, personalization with mandatory fallbacks (`{{first_name | fallback: "there"}}`), unresolved placeholder flagging, plain-text alternative.
 - Preview: desktop/mobile selectable widths, labeled "browser preview, not Outlook/Gmail simulation", with selected recipient.
 - Custom HTML: Admin only; sanitized allowlist, validated, previewed in sandboxed iframe with CSP.
@@ -94,10 +101,10 @@ Exceptions: ignore once; scoped (block, campaign, brand); admin-only rule disabl
 workspace, user, session, notification, brand_settings, asset, block_definition, campaign, campaign_revision, preview_confirmation, qa_run, qa_finding, finding_event, qa_rule, qa_exception, qa_submission (assignment, notes), approval, contact, import_batch, segment, tester_allowlist, send_job, send_recipient, provider_event, activity_log (append-only).
 
 ## 11. Milestones and acceptance
-- **M0 Foundations/hosting:** accounts, deployed skeleton, CI, migrations, Chromium memory measured. Accept: HTTPS page loads; /health checks DB; Playwright screenshot works on host; row survives restart and redeploy.
-- **M1 Auth/roles/notifications:** three roles, capability model, Admin user creation, in-app notifications, TOTP two-factor sign-in with recovery codes. Accept: permission-matrix test over every endpoint x role passes (incl. Admin-bypass attempts); sessions expire; rate limiting works; sign-in is refused without a valid second factor; recovery code works once and Admin can reset a user's 2FA (logged).
-- **M2 Editor core:** block model, shared blocks, MJML render, DnD, undo/redo, autosave, duplication, revisions. Accept: instance edits persist across reload; library and other emails byte-identical; restore works; render stable.
-- **M3 Templates/assets/brand/preview:** (after references approved) three templates + specialty blocks, R2 assets, brand, preview widths, recipient preview, personalization, plain text, sanitized custom HTML. Accept: all templates build and preview; labels present; placeholders flagged; XSS suite passes.
+- **M0 Foundations/hosting (COMPLETE 2026-10-15):** accounts, deployed skeleton, CI, migrations, Chromium memory measured. Accept: HTTPS page loads; /health checks DB; Playwright screenshot works on host; row survives restart and redeploy.
+- **M1 Auth/roles/notifications (COMPLETE 2026-10-17):** three roles, capability model, Admin user creation, in-app notifications, TOTP two-factor sign-in with recovery codes. Accept: permission-matrix test over every endpoint x role passes (incl. Admin-bypass attempts); sessions expire; rate limiting works; sign-in is refused without a valid second factor; recovery code works once and Admin can reset a user's 2FA (logged).
+- **M2 Editor core (COMPLETE 2026-10-17; user hosted Builder walkthrough pending):** block model, shared blocks, MJML render, DnD, undo/redo, autosave, duplication, revisions. Accept: instance edits persist across reload; library and other emails byte-identical; restore works; render stable.
+- **M3 Templates/assets/brand/preview (NEXT):** the three starter templates with their specialty blocks (see section 6); shared brand header/footer with Brand settings and versioning; R2 asset library (logo and images); live preview and full-screen preview with "Preview as..." recipient; personalization with mandatory fallbacks and unresolved-placeholder flagging; plain-text alternative; sanitized custom HTML for Admins; chosen app theme applied. Needs from user: brand name/logo/social links/colors, Cloudflare R2 bucket and key, approval of template looks (screenshots shown before sign-off). Accept: all three templates build and preview; specialty blocks are independent per email and never change library originals; changing the brand header/footer updates drafts, leaves approved/sent revisions untouched and cancels approval of unsent approved campaigns; live and full-screen preview work at selectable widths with labels; placeholders flagged; plain text generated; XSS suite passes.
 - **M4 Audience:** import, filters, segments, counts. Accept: cap holds across imports; row-level errors; operators tested; counts shown separately; sample data covers exclusions.
 - **M5 QA engine:** all initial checks, evidence, screenshots, manual-check labelling. Accept: planted defect per rule detected and classified correctly.
 - **M6 Submit/review/approval:** Submit for QA with preview gate, My QA Tasks, review actions, exceptions, approval. Accept: all transitions tested; self-approval blocked incl. Admin; edit voids approval; submission blocked without current preview; everything logged.
@@ -109,7 +116,7 @@ Block isolation (mutate instance, assert definitions/other emails unchanged; res
 
 ## 13. Scope
 Current: everything above. Future: dynamic audience variants (recommend combination of conditional blocks + full variants; ordered first-match priority, default variant, one variant per recipient, QA/approval per variant, final summary of segments/variants/unique recipients; present options and examples before building), AI-assisted review, real client rendering, other providers/SFMC, multiple workspaces, email notifications, A/B tests.
-Approved suggestion: two-factor sign-in (TOTP authenticator app, recovery codes; required for all users; built in M1). Pending suggestion: Sentry error monitoring.
+Approved and built suggestions: two-factor sign-in (TOTP authenticator app, recovery codes; required for all users; M1) and Sentry error monitoring (M0; error reports exclude user, cookies, headers and request bodies).
 
 ## 14. Local setup
-Node 22 LTS, Git, VS Code; npm install; npx playwright install chromium; copy .env.example to .env (Neon dev DB, R2, Resend keys); npm run dev; npm test. Accounts: GitHub, Render, Neon, Cloudflare, Resend, domain registrar.
+Node 24 LTS, Git, VS Code; npm install; npx playwright install chromium; copy .env.example to .env (Neon DEV database, APP_SECRET_KEY, APP_BASE_URL, later R2/Resend keys; never the production database); npm run dev; npm test; npm run e2e (browser tests). Accounts: GitHub, Render, Neon, Cloudflare, Resend, domain registrar.
