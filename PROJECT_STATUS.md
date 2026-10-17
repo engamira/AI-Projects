@@ -4,7 +4,7 @@ Last updated: 2026-10-16
 
 ## Milestones
 - **M0 Foundations/hosting: COMPLETE** (2026-10-15). Hosted at https://ai-projects-9vgh.onrender.com (Render, Neon Postgres). Verified: HTTPS, /health, Playwright screenshot on host, data survives redeploy, Sentry receives errors with no body/headers/cookies/user, GitHub Actions CI.
-- **M1 Auth, roles, 2FA, notifications: BUILT AND TESTED LOCALLY, NOT YET DEPLOYED** (waiting on Render environment variables, see Blockers).
+- **M1 Auth, roles, 2FA, notifications: DEPLOYED, awaiting first-Admin sign-in check.** Deployed 2026-10-17: hosted /health ok and /api/auth/me answers `{"stage":"none"}` (new code live). CI green on GitHub (build, typecheck, 40 tests against a Postgres service, 11 browser checks on Linux). Remaining: user creates the first Admin with `create-admin`, signs in, scans the QR with a real authenticator app, saves recovery codes.
 
 ## M1 delivered (code complete)
 - Roles Admin / Builder / QA reviewer as capability bundles (`packages/shared`); server checks capabilities only. Builder and Admin can send an approved campaign (approval must come from a different person; enforced when campaigns exist in M6).
