@@ -32,6 +32,7 @@ export type FieldDef = {
   min?: number; // number
   max?: number; // number, or max length for text
   unit?: string; // number
+  optional?: boolean; // may be absent in emails saved before the field existed
 };
 
 export type BlockDefinition = {
@@ -53,6 +54,13 @@ const ALIGN = [
 const text = (key: string, label: string, group: FieldGroup = 'content', help?: string, max = 200): FieldDef => ({ key, label, kind: 'text', group, help, max });
 const area = (key: string, label: string, max = 2000): FieldDef => ({ key, label, kind: 'textarea', group: 'content', max });
 const url = (key: string, label: string, help?: string): FieldDef => ({ key, label, kind: 'url', group: 'content', help });
+export const ALIAS_HELP = 'Internal name for this link, used in reports and checks. Recipients never see it.';
+export const aliasKey = (urlKey: string): string => `${urlKey}Alias`;
+/** A link: its address plus an internal alias. */
+const link = (key: string, label: string, help?: string): FieldDef[] => [
+  url(key, label, help),
+  { key: aliasKey(key), label: `${label} alias`, kind: 'text', group: 'content', help: ALIAS_HELP, max: 80, optional: true },
+];
 const image = (key: string, label: string, help?: string): FieldDef => ({ key, label, kind: 'image', group: 'content', help });
 const color = (key: string, label: string): FieldDef => ({ key, label, kind: 'color', group: 'style' });
 const align = (key = 'align', label = 'Alignment'): FieldDef => ({ key, label, kind: 'select', group: 'style', options: ALIGN });
@@ -64,7 +72,7 @@ export const DEFAULT_ADDRESS = 'Dubai Silicon Oasis - pineapple tower G101 - Dub
 export const BLOCK_DEFINITIONS: BlockDefinition[] = [
   {
     type: 'header',
-    version: 1,
+    version: 2,
     label: 'Header / logo',
     description: 'Logo or brand name at the top of the email.',
     category: 'shared',
@@ -73,17 +81,17 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       text('logoAlt', 'Logo description (alt text)'),
       num('logoWidth', 'Logo width', 40, 400, 'style'),
       text('brandName', 'Brand name (shown when there is no logo)'),
-      url('linkUrl', 'Link when clicked'),
+      ...link('linkUrl', 'Link when clicked'),
       align(),
       color('bgColor', 'Background color'),
       color('textColor', 'Text color'),
       num('paddingY', 'Space above and below', 0, 80),
     ],
-    defaults: { logoUrl: '', logoAlt: 'Company logo', logoWidth: 140, brandName: 'Your Brand', linkUrl: '', align: 'center', bgColor: '#ffffff', textColor: '#1c2430', paddingY: 20 },
+    defaults: { logoUrl: '', logoAlt: 'Company logo', logoWidth: 140, brandName: 'Your Brand', linkUrl: '', linkUrlAlias: 'Header link', align: 'center', bgColor: '#ffffff', textColor: '#1c2430', paddingY: 20 },
   },
   {
     type: 'hero',
-    version: 1,
+    version: 2,
     label: 'Hero banner',
     description: 'Large image with a headline and a button.',
     category: 'shared',
@@ -93,7 +101,7 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       text('headline', 'Headline'),
       text('subheadline', 'Subheadline', 'content', undefined, 300),
       text('buttonText', 'Button text'),
-      url('buttonUrl', 'Button link'),
+      ...link('buttonUrl', 'Button link'),
       align(),
       color('bgColor', 'Background color'),
       color('textColor', 'Text color'),
@@ -103,7 +111,7 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
     ],
     defaults: {
       imageUrl: '', imageAlt: '', headline: 'A big, clear headline', subheadline: 'One supporting sentence that tells readers why it matters.',
-      buttonText: 'Learn more', buttonUrl: '', align: 'center', bgColor: '#1c2430', textColor: '#ffffff', buttonColor: '#f5b301', buttonTextColor: '#1c2430', paddingY: 40,
+      buttonText: 'Learn more', buttonUrl: '', buttonUrlAlias: 'Hero button', align: 'center', bgColor: '#1c2430', textColor: '#ffffff', buttonColor: '#f5b301', buttonTextColor: '#1c2430', paddingY: 40,
     },
   },
   {
@@ -126,7 +134,7 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
   },
   {
     type: 'image',
-    version: 1,
+    version: 2,
     label: 'Image',
     description: 'A single picture, optionally linked.',
     category: 'shared',
@@ -134,23 +142,23 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       image('src', 'Image'),
       text('alt', 'Image description (alt text)', 'content', 'Describe the picture for people who cannot see it.'),
       toggle('decorative', 'Decorative only (no description needed)'),
-      url('linkUrl', 'Link when clicked'),
+      ...link('linkUrl', 'Link when clicked'),
       num('widthPercent', 'Width', 20, 100, 'style', '%'),
       align(),
       color('bgColor', 'Background color'),
       num('paddingY', 'Space above and below', 0, 80),
     ],
-    defaults: { src: '', alt: '', decorative: false, linkUrl: '', widthPercent: 100, align: 'center', bgColor: '#ffffff', paddingY: 0 },
+    defaults: { src: '', alt: '', decorative: false, linkUrl: '', linkUrlAlias: 'Image link', widthPercent: 100, align: 'center', bgColor: '#ffffff', paddingY: 0 },
   },
   {
     type: 'button',
-    version: 1,
+    version: 2,
     label: 'Button',
     description: 'A call-to-action button.',
     category: 'shared',
     fields: [
       text('label', 'Button text'),
-      url('url', 'Link'),
+      ...link('url', 'Link'),
       toggle('fullWidth', 'Full width'),
       align(),
       color('bgColor', 'Button color'),
@@ -159,11 +167,11 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       num('borderRadius', 'Corner roundness', 0, 40, 'style'),
       num('paddingY', 'Space above and below', 0, 80),
     ],
-    defaults: { label: 'Click here', url: '', fullWidth: false, align: 'center', bgColor: '#2457d6', textColor: '#ffffff', containerBg: '#ffffff', borderRadius: 6, paddingY: 20 },
+    defaults: { label: 'Click here', url: '', urlAlias: 'Button', fullWidth: false, align: 'center', bgColor: '#2457d6', textColor: '#ffffff', containerBg: '#ffffff', borderRadius: 6, paddingY: 20 },
   },
   {
     type: 'two_column',
-    version: 1,
+    version: 2,
     label: 'Two columns',
     description: 'Two side-by-side items that stack on phones.',
     category: 'shared',
@@ -173,13 +181,13 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       text('leftHeading', 'Left heading'),
       area('leftBody', 'Left text', 600),
       text('leftButtonText', 'Left button text'),
-      url('leftButtonUrl', 'Left button link'),
+      ...link('leftButtonUrl', 'Left button link'),
       image('rightImage', 'Right image'),
       text('rightImageAlt', 'Right image description (alt text)'),
       text('rightHeading', 'Right heading'),
       area('rightBody', 'Right text', 600),
       text('rightButtonText', 'Right button text'),
-      url('rightButtonUrl', 'Right button link'),
+      ...link('rightButtonUrl', 'Right button link'),
       color('bgColor', 'Background color'),
       color('textColor', 'Text color'),
       color('buttonColor', 'Button color'),
@@ -187,8 +195,8 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       num('paddingY', 'Space above and below', 0, 80),
     ],
     defaults: {
-      leftImage: '', leftImageAlt: '', leftHeading: 'First item', leftBody: 'A short description of the first item.', leftButtonText: 'Read more', leftButtonUrl: '',
-      rightImage: '', rightImageAlt: '', rightHeading: 'Second item', rightBody: 'A short description of the second item.', rightButtonText: 'Read more', rightButtonUrl: '',
+      leftImage: '', leftImageAlt: '', leftHeading: 'First item', leftBody: 'A short description of the first item.', leftButtonText: 'Read more', leftButtonUrl: '', leftButtonUrlAlias: 'Left button',
+      rightImage: '', rightImageAlt: '', rightHeading: 'Second item', rightBody: 'A short description of the second item.', rightButtonText: 'Read more', rightButtonUrl: '', rightButtonUrlAlias: 'Right button',
       bgColor: '#ffffff', textColor: '#1c2430', buttonColor: '#2457d6', buttonTextColor: '#ffffff', paddingY: 24,
     },
   },
@@ -212,26 +220,26 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
   },
   {
     type: 'social',
-    version: 1,
+    version: 2,
     label: 'Social links',
     description: 'Links to your social profiles. Empty links are hidden.',
     category: 'shared',
     fields: [
-      url('facebook', 'Facebook'),
-      url('instagram', 'Instagram'),
-      url('x', 'X'),
-      url('linkedin', 'LinkedIn'),
-      url('youtube', 'YouTube'),
+      ...link('facebook', 'Facebook'),
+      ...link('instagram', 'Instagram'),
+      ...link('x', 'X'),
+      ...link('linkedin', 'LinkedIn'),
+      ...link('youtube', 'YouTube'),
       align(),
       color('textColor', 'Link color'),
       color('bgColor', 'Background color'),
       num('paddingY', 'Space above and below', 0, 80),
     ],
-    defaults: { facebook: '', instagram: '', x: '', linkedin: '', youtube: '', align: 'center', textColor: '#2457d6', bgColor: '#ffffff', paddingY: 16 },
+    defaults: { facebook: '', facebookAlias: 'Social - Facebook', instagram: '', instagramAlias: 'Social - Instagram', x: '', xAlias: 'Social - X', linkedin: '', linkedinAlias: 'Social - LinkedIn', youtube: '', youtubeAlias: 'Social - YouTube', align: 'center', textColor: '#2457d6', bgColor: '#ffffff', paddingY: 16 },
   },
   {
     type: 'footer',
-    version: 1,
+    version: 2,
     label: 'Footer',
     description: 'Company address and the unsubscribe link every email needs.',
     category: 'shared',
@@ -240,7 +248,7 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       text('address', 'Postal address', 'content', undefined, 300),
       area('notice', 'Why they receive this email', 400),
       text('unsubscribeText', 'Unsubscribe link text'),
-      url('unsubscribeUrl', 'Unsubscribe link', 'Keep {{unsubscribe_url}} so each recipient gets their own link when sending.'),
+      ...link('unsubscribeUrl', 'Unsubscribe link', 'Keep {{unsubscribe_url}} so each recipient gets their own link when sending.'),
       align(),
       color('textColor', 'Text color'),
       color('linkColor', 'Link color'),
@@ -249,7 +257,7 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
     ],
     defaults: {
       companyName: 'Your Company', address: DEFAULT_ADDRESS, notice: 'You are receiving this email because you subscribed to our updates.',
-      unsubscribeText: 'Unsubscribe', unsubscribeUrl: '{{unsubscribe_url}}', align: 'center', textColor: '#5b6676', linkColor: '#2457d6', bgColor: '#f2f2f2', paddingY: 24,
+      unsubscribeText: 'Unsubscribe', unsubscribeUrl: '{{unsubscribe_url}}', unsubscribeUrlAlias: 'Unsubscribe', align: 'center', textColor: '#5b6676', linkColor: '#2457d6', bgColor: '#f2f2f2', paddingY: 24,
     },
   },
 ];

@@ -25,7 +25,7 @@ describe('block library', () => {
     const res = await builder.get('/api/library/blocks');
     expect(res.status).toBe(200);
     expect(res.body.blocks.map((b: { type: string }) => b.type)).toEqual([...BLOCK_TYPES]);
-    expect(res.body.blocks.every((b: { version: number }) => b.version === 1)).toBe(true);
+    for (const b of res.body.blocks) expect(b.version).toBe(BLOCK_DEFINITIONS.find((d) => d.type === b.type)!.version);
   });
 
   it('survives restarts: syncing again on a database that already has the library changes nothing', async () => {
@@ -43,9 +43,9 @@ describe('block library', () => {
   it('refuses to start if a released version was edited without a new version number', async () => {
     const edited = BLOCK_DEFINITIONS.map((d) => (d.type === 'header' ? { ...d, label: 'Renamed header' } : d));
     await expect(syncBlockDefinitions(t.db, edited)).rejects.toThrow(/header.*changed without a new version/);
-    const newVersion = BLOCK_DEFINITIONS.map((d) => (d.type === 'header' ? { ...d, version: 2, label: 'Header v2' } : d));
+    const newVersion = BLOCK_DEFINITIONS.map((d) => (d.type === 'header' ? { ...d, version: d.version + 1, label: 'Header next' } : d));
     await syncBlockDefinitions(t.db, newVersion); // a new version number is accepted
-    expect((await builder.get('/api/library/blocks')).body.blocks.find((b: { type: string }) => b.type === 'header').version).toBe(2);
+    expect((await builder.get('/api/library/blocks')).body.blocks.find((b: { type: string }) => b.type === 'header').version).toBe(BLOCK_DEFINITIONS.find((d) => d.type === 'header')!.version + 1);
     // existing emails keep working: version 1 is still stored
     expect((await t.db.query(`SELECT count(*)::int AS n FROM block_definition WHERE type = 'header'`)).rows[0].n).toBe(2);
   });
@@ -64,6 +64,44 @@ describe('block library', () => {
       const v = validateContent(content);
       expect(v.ok, `${def.type}: ${!v.ok ? v.error : ''}`).toBe(true);
     }
+  });
+});
+
+describe('link aliases', () => {
+  it('every link field in every block has an alias field next to it', () => {
+    for (const def of BLOCK_DEFINITIONS) {
+      for (const f of def.fields.filter((x) => x.kind === 'url')) {
+        const alias = def.fields.find((x) => x.key === `${f.key}Alias`);
+        expect(alias, `${def.type}.${f.key} needs an alias`).toBeDefined();
+        expect(alias!.kind).toBe('text');
+        expect(alias!.optional).toBe(true);
+        expect(def.fields.indexOf(alias!)).toBe(def.fields.indexOf(f) + 1); // shown right under the link
+        expect(typeof def.defaults[alias!.key]).toBe('string');
+      }
+    }
+  });
+
+  it('are saved, restored on reopen, limited in length and never shown in the email HTML', async () => {
+    const c = await newCampaign('Aliases');
+    const b = block('button');
+    b.props.url = 'https://example.com/offer';
+    b.props.urlAlias = 'Summer offer button';
+    const content: EmailContent = { ...emptyContent(), blocks: [b] };
+    expect((await builder.put(`/api/campaigns/${c.id}/draft`, { content, baseVersion: 1 })).status).toBe(200);
+    expect((await builder.get(`/api/campaigns/${c.id}`)).body.draft.content.blocks[0].props.urlAlias).toBe('Summer offer button');
+    expect((await renderEmail(content)).html).not.toContain('Summer offer button');
+    b.props.urlAlias = 'x'.repeat(81);
+    expect((await builder.put(`/api/campaigns/${c.id}/draft`, { content, baseVersion: 2 })).status).toBe(400);
+  });
+
+  it('emails saved before aliases existed still open and save', async () => {
+    const old = block('hero');
+    delete (old.props as Record<string, unknown>).buttonUrlAlias; // as saved by the earlier version of the block
+    old.sourceVersion = 1;
+    const v = validateContent({ ...emptyContent(), blocks: [old] });
+    expect(v.ok, !v.ok ? v.error : '').toBe(true);
+    const c = await newCampaign('Old email');
+    expect((await builder.put(`/api/campaigns/${c.id}/draft`, { content: { ...emptyContent(), blocks: [old] }, baseVersion: 1 })).status).toBe(200);
   });
 });
 

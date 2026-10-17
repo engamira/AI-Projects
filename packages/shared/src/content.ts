@@ -130,7 +130,10 @@ function checkFields(fields: FieldDef[], values: Record<string, unknown>, label:
   const keys = new Set(fields.map((f) => f.key));
   for (const k of Object.keys(values)) if (!keys.has(k)) return `${label}: unknown setting "${k}"`;
   for (const f of fields) {
-    if (!(f.key in values)) return `${label}: missing "${f.label}"`;
+    if (!(f.key in values)) {
+      if (f.optional) continue; // saved before this field existed
+      return `${label}: missing "${f.label}"`;
+    }
     const err = checkField(f, values[f.key]);
     if (err) return `${label} – ${err}`;
   }

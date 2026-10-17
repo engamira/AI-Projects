@@ -121,6 +121,8 @@ try {
   await page.getByText('must start with https://').waitFor();
   await page.getByText(/Not saved:/).waitFor();
   await page.getByLabel('Button link', { exact: true }).fill('https://example.com/summer');
+  assert((await page.getByLabel('Button link alias', { exact: true }).inputValue()) === 'Hero button', 'the link alias starts with a helpful default');
+  await page.getByLabel('Button link alias', { exact: true }).fill('Summer hero button');
   await saved();
   ok('an unsafe link is flagged and blocked from saving until fixed');
 
@@ -131,6 +133,7 @@ try {
   assert((await blocks.nth(3).innerText()).includes('Summer fares from AED 999'), 'edited text survives a reload');
   await blocks.nth(3).click();
   assert((await page.getByLabel('Background color', { exact: true }).inputValue()) === '#0a3d62', 'edited color survives a reload');
+  assert((await page.getByLabel('Button link alias', { exact: true }).inputValue()) === 'Summer hero button', 'link alias survives a reload');
   ok('reopening the email restores every edit');
 
   // ---- library originals and other emails are unchanged
