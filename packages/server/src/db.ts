@@ -13,7 +13,7 @@ export function createPool(connectionString: string, opts: { schema?: string } =
     connectionString: connectionString.replace(/sslmode=(require|prefer|verify-ca)/, 'sslmode=verify-full'),
     max: 5,
     // Fail fast instead of hanging forever when the database is slow or unreachable.
-    connectionTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 20_000, // generous: a sleeping Neon database can take several seconds to wake
     query_timeout: 30_000,
     idleTimeoutMillis: 30_000,
     ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: true },
