@@ -6,12 +6,12 @@ import type { Queryable } from './db.js';
  * The rows are immutable, so if the code now differs from a stored version, that version was
  * edited in place; refuse to start rather than silently serving a changed "original".
  */
-export async function syncBlockDefinitions(db: Queryable): Promise<void> {
+export async function syncBlockDefinitions(db: Queryable, definitions: BlockDefinition[] = BLOCK_DEFINITIONS): Promise<void> {
   const rows = await db.query<{ type: string; version: number; definition: BlockDefinition }>(
     'SELECT type, version, definition FROM block_definition',
   );
   const stored = new Map(rows.rows.map((r) => [`${r.type}@${r.version}`, r.definition]));
-  for (const def of BLOCK_DEFINITIONS) {
+  for (const def of definitions) {
     const existing = stored.get(`${def.type}@${def.version}`);
     if (!existing) {
       await db.query('INSERT INTO block_definition (type, version, definition) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [

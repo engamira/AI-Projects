@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BLOCK_DEFINITIONS, BLOCK_TYPES, canonicalJson, createInstance, blockDefinition, emptyContent, validateContent, type EmailContent } from '@cl/shared';
+import { buildApp } from './app.js';
+import { syncBlockDefinitions } from './blocklib.js';
 import { sha256 } from './crypto.js';
 import { renderEmail } from './render.js';
 import { createTestApp, type Client, type TestApp } from './testkit.js';
@@ -24,6 +26,28 @@ describe('block library', () => {
     expect(res.status).toBe(200);
     expect(res.body.blocks.map((b: { type: string }) => b.type)).toEqual([...BLOCK_TYPES]);
     expect(res.body.blocks.every((b: { version: number }) => b.version === 1)).toBe(true);
+  });
+
+  it('survives restarts: syncing again on a database that already has the library changes nothing', async () => {
+    const before = await libraryHash();
+    await syncBlockDefinitions(t.db);
+    await syncBlockDefinitions(t.db);
+    expect(await libraryHash()).toBe(before);
+    // a whole second server starting on the same database must boot too
+    const second = await buildApp({ db: t.db, config: t.config });
+    await second.ready();
+    expect((await second.inject('/health')).json().status).toBe('ok');
+    await second.close();
+  });
+
+  it('refuses to start if a released version was edited without a new version number', async () => {
+    const edited = BLOCK_DEFINITIONS.map((d) => (d.type === 'header' ? { ...d, label: 'Renamed header' } : d));
+    await expect(syncBlockDefinitions(t.db, edited)).rejects.toThrow(/header.*changed without a new version/);
+    const newVersion = BLOCK_DEFINITIONS.map((d) => (d.type === 'header' ? { ...d, version: 2, label: 'Header v2' } : d));
+    await syncBlockDefinitions(t.db, newVersion); // a new version number is accepted
+    expect((await builder.get('/api/library/blocks')).body.blocks.find((b: { type: string }) => b.type === 'header').version).toBe(2);
+    // existing emails keep working: version 1 is still stored
+    expect((await t.db.query(`SELECT count(*)::int AS n FROM block_definition WHERE type = 'header'`)).rows[0].n).toBe(2);
   });
 
   it('cannot be changed through the API or the database', async () => {
