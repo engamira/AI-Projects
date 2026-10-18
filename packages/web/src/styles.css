@@ -221,3 +221,27 @@ ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .lib-group { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 16px 0 6px; }
 .check-inline { display: flex; align-items: center; gap: 8px; font-weight: 400; margin: 12px 0 8px; }
 .check-inline input { width: auto; }
+
+/* ---------- Phone and desktop preview side by side ---------- */
+.preview-devices { display: flex; gap: 24px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; }
+.device { flex: 0 0 auto; }
+.device-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.device-bar select { width: auto; }
+.device-screen { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; box-shadow: var(--shadow); max-width: 100%; }
+.device-phone .device-screen { border-radius: 24px; border: 6px solid var(--text); }
+
+/* Device frames: a phone with a bezel and a desktop browser window around each preview */
+.device-screen { border: 0; border-radius: 0; box-shadow: none; }
+.device-phone .device-screen { border: 0; border-radius: 22px; }
+.frame { position: relative; background: #1d1a1f; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); }
+.frame-phone { padding: 38px 12px 34px; border-radius: 40px; }
+.frame-phone .device-screen { overflow: hidden; background: #fff; }
+.frame-notch { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 96px; height: 14px; border-radius: 10px; background: #0b0a0c; }
+.frame-home { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); width: 110px; height: 5px; border-radius: 4px; background: #6b6570; }
+.frame-desktop { border-radius: 12px; overflow: hidden; background: #d9dde3; }
+.frame-chrome { display: flex; align-items: center; gap: 7px; padding: 10px 14px; background: #e9ecf1; border-bottom: 1px solid #cdd2da; }
+.frame-chrome i { width: 11px; height: 11px; border-radius: 50%; background: #f26b6b; display: block; }
+.frame-chrome i:nth-child(2) { background: #f5c04e; }
+.frame-chrome i:nth-child(3) { background: #5cc16e; }
+.frame-url { margin-left: 10px; flex: 1; max-width: 420px; background: #fff; color: #5b6676; border-radius: 6px; padding: 3px 12px; font-size: 0.8rem; }
+.frame-desktop .device-screen { overflow: auto; background: #fff; }

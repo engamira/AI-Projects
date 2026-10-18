@@ -167,14 +167,25 @@ try {
   // ---- preview with selectable widths
   await page.getByRole('tab', { name: 'Preview' }).click();
   await page.getByText('not an Outlook or Gmail simulation').waitFor();
-  const frame = page.locator('iframe[title="Email preview"]');
-  await page.waitForFunction(() => (document.querySelector('iframe[title="Email preview"]') as HTMLIFrameElement | null)?.srcdoc.includes('A big, clear headline'));
-  assert((await frame.getAttribute('sandbox')) === '', 'preview iframe is fully sandboxed (no scripts)');
-  assert((await frame.evaluate((f) => (f as HTMLElement).getBoundingClientRect().width)) === 375, 'default preview width is a phone');
-  await page.getByLabel('Width').selectOption('1024');
-  assert((await frame.evaluate((f) => (f as HTMLElement).getBoundingClientRect().width)) === 1024, 'preview width changes');
+  const phoneFrame = page.locator('iframe[title="Phone preview"]');
+  const desktopFrame = page.locator('iframe[title="Desktop preview"]');
+  await page.waitForFunction(() => (document.querySelector('iframe[title="Desktop preview"]') as HTMLIFrameElement | null)?.srcdoc.includes('A big, clear headline'));
+  const width = (l: typeof phoneFrame) => l.evaluate((f) => (f as HTMLElement).getBoundingClientRect().width);
+  const left = (l: typeof phoneFrame) => l.evaluate((f) => (f as HTMLElement).getBoundingClientRect().left);
+  assert((await phoneFrame.getAttribute('sandbox')) === '' && (await desktopFrame.getAttribute('sandbox')) === '', 'both preview frames are fully sandboxed (no scripts)');
+  assert((await width(phoneFrame)) === 375, 'the phone view is 375 px wide by default');
+  assert((await width(desktopFrame)) >= 600, 'the desktop view is at least 600 px wide');
+  assert((await left(phoneFrame)) < (await left(desktopFrame)), 'phone and desktop sit side by side, phone on the left');
+  assert((await page.locator('.frame-phone .frame-notch').count()) === 1 && (await page.locator('.frame-desktop .frame-chrome').count()) === 1, 'a phone frame and a browser window frame surround the views');
+  await page.getByLabel('Desktop width', { exact: true }).selectOption('1024');
+  assert((await width(desktopFrame)) === 1024, 'the desktop width can be changed');
+  await page.getByLabel('Phone width', { exact: true }).selectOption('414');
+  assert((await width(phoneFrame)) === 414 && (await width(desktopFrame)) === 1024, 'each view keeps its own width');
+  assert(await page.getByText('not an Outlook or Gmail simulation').isVisible(), 'labeled as a browser preview');
+  await page.getByLabel('Desktop width', { exact: true }).selectOption('768');
+  await page.getByLabel('Phone width', { exact: true }).selectOption('375');
   await shot(page, 'm2-2-preview.png');
-  ok('preview shows the generated email at selectable widths, labeled as a browser preview');
+  ok('preview shows phone and desktop side by side in device frames, each with its own width, labeled as a browser preview');
 
   // ---- versions: save, change, restore
   await page.getByRole('tab', { name: 'Edit' }).click();

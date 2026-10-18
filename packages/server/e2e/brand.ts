@@ -81,8 +81,8 @@ try {
     if (shots) await bp.screenshot({ path: path.join(shots, `m3-editor-${key}.png`) });
     // the generated email has the same logo and footer
     await bp.getByRole('tab', { name: 'Preview' }).click();
-    await bp.waitForFunction(() => (document.querySelector('iframe[title="Email preview"]') as HTMLIFrameElement | null)?.srcdoc.includes('/media/'));
-    const html = await bp.locator('iframe[title="Email preview"]').evaluate((f) => (f as HTMLIFrameElement).srcdoc);
+    await bp.waitForFunction(() => (document.querySelector('iframe[title="Desktop preview"]') as HTMLIFrameElement | null)?.srcdoc.includes('/media/'));
+    const html = await bp.locator('iframe[title="Desktop preview"]').evaluate((f) => (f as HTMLIFrameElement).srcdoc);
     assert(/\/media\/[0-9a-f-]{36}/.test(html) && html.includes('Unsubscribe'), `${label}: the real email shows the logo and unsubscribe link`);
     void name;
   }

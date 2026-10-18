@@ -171,20 +171,55 @@ function Properties({ canEdit }: { canEdit: boolean }) {
 }
 
 // ---------- Preview ----------
-const WIDTHS = [
+const PHONE_WIDTHS = [
   { w: 320, label: 'Small phone (320)' },
   { w: 375, label: 'Phone (375)' },
   { w: 414, label: 'Large phone (414)' },
+];
+const DESKTOP_WIDTHS = [
   { w: 600, label: 'Email width (600)' },
   { w: 768, label: 'Tablet (768)' },
   { w: 1024, label: 'Desktop (1024)' },
+  { w: 1280, label: 'Wide desktop (1280)' },
 ];
+
+/** One simulated screen: the generated email at a chosen width. */
+function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop'; html: string; widths: { w: number; label: string }[]; initial: number }) {
+  const [width, setWidth] = useState(initial);
+  const name = kind === 'phone' ? 'Phone' : 'Desktop';
+  return (
+    <section className={`device device-${kind}`} aria-label={`${name} view`}>
+      <div className="device-bar">
+        <strong>{name}</strong>
+        <select aria-label={`${name} width`} value={widths.some((x) => x.w === width) ? width : 'custom'} onChange={(e) => e.target.value !== 'custom' && setWidth(Number(e.target.value))}>
+          {widths.map((x) => <option key={x.w} value={x.w}>{x.label}</option>)}
+          <option value="custom">Custom…</option>
+        </select>
+        <input type="number" aria-label={`${name} width in pixels`} min={280} max={1600} value={width} onChange={(e) => setWidth(Math.max(280, Math.min(1600, Number(e.target.value) || 280)))} style={{ width: 80 }} /> <span className="muted small">px</span>
+      </div>
+      <div className={`frame frame-${kind}`}>
+        {kind === 'desktop' && (
+          <div className="frame-chrome" aria-hidden="true">
+            <i /><i /><i />
+            <span className="frame-url">Email preview</span>
+          </div>
+        )}
+        {kind === 'phone' && <div className="frame-notch" aria-hidden="true" />}
+        <div className="device-screen">
+          <iframe title={`${name} preview`} sandbox="" srcDoc={html} style={{ width, height: kind === 'phone' ? '70vh' : '74vh', border: 0, background: '#fff', display: 'block' }} />
+        </div>
+        {kind === 'phone' && <div className="frame-home" aria-hidden="true" />}
+      </div>
+    </section>
+  );
+}
 
 function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; revision?: RevisionDto; onClose?: () => void }) {
   const [html, setHtml] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState('');
-  const [width, setWidth] = useState(375);
+  // The desktop view starts as wide as the screen allows next to the phone, between 600 and 1024 px.
+  const desktopStart = Math.max(600, Math.min(1024, Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) - 375 - 24 - 72)));
 
   useEffect(() => {
     let live = true;
@@ -204,22 +239,15 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
     <div className="preview-pane">
       <div className="preview-bar">
         <strong>{revision ? `Version ${revision.number}` : 'Current draft'}</strong>
-        <label className="inline">Width
-          <select value={WIDTHS.some((x) => x.w === width) ? width : 'custom'} onChange={(e) => e.target.value !== 'custom' && setWidth(Number(e.target.value))}>
-            {WIDTHS.map((x) => <option key={x.w} value={x.w}>{x.label}</option>)}
-            <option value="custom">Custom…</option>
-          </select>
-        </label>
-        <label className="inline">px
-          <input type="number" min={280} max={1400} value={width} onChange={(e) => setWidth(Math.max(280, Math.min(1400, Number(e.target.value) || 280)))} style={{ width: 80 }} />
-        </label>
+        <span className="muted small">Phone and desktop side by side. Each has its own width.</span>
         {onClose && <button type="button" onClick={onClose}>Close preview</button>}
       </div>
-      <p className="muted small">Browser preview at the chosen width. It is not an Outlook or Gmail simulation: real email apps can render differently.</p>
+      <p className="muted small">Browser preview. It is not an Outlook or Gmail simulation: real email apps can render differently.</p>
       {error && <p className="error" role="alert">{error}</p>}
       {warnings.length > 0 && <details><summary>{warnings.length} rendering note(s)</summary><pre>{warnings.join('\n')}</pre></details>}
-      <div className="preview-frame-wrap">
-        <iframe title="Email preview" sandbox="" srcDoc={html} style={{ width, height: '70vh', border: '1px solid var(--border)', background: '#fff' }} />
+      <div className="preview-devices">
+        <DeviceFrame kind="phone" html={html} widths={PHONE_WIDTHS} initial={375} />
+        <DeviceFrame kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={desktopStart} />
       </div>
     </div>
   );
