@@ -7,6 +7,7 @@ import {
   PALETTE_IDS,
   emptyContent,
   normalizeContent,
+  starterContent,
   validateContent,
   type CampaignDto,
   type CampaignSummary,
@@ -47,7 +48,7 @@ const toDto = (r: CampaignRow): CampaignDto => ({
 const idParam = z.object({ id: z.string().uuid() });
 const revParams = z.object({ id: z.string().uuid(), rid: z.string().uuid() });
 const nameBody = z.object({ name: z.string().trim().min(1, 'Enter a name.').max(120, 'Name is too long.') });
-const createBody = nameBody.extend({ palette: z.enum(PALETTE_IDS).default('travel') });
+const createBody = nameBody.extend({ palette: z.enum(PALETTE_IDS).default('travel'), starter: z.boolean().default(false) });
 const labelBody = z.object({ label: z.string().trim().max(120).optional() });
 const draftBody = z.object({ content: z.unknown(), baseVersion: z.number().int().min(1) });
 
@@ -116,11 +117,11 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
   });
 
   app.post('/api/campaigns', { config: { access: 'campaign.edit' } }, async (req, reply) => {
-    const { name, palette } = createBody.parse(req.body);
+    const { name, palette, starter } = createBody.parse(req.body);
     const userId = req.auth!.user.id;
     const row = await withTransaction(db, async (q) => {
-      const c = await createCampaign(q, userId, name, emptyContent(palette), 'created');
-      await logActivity(q, { actorId: userId, action: 'campaign.created', entityType: 'campaign', entityId: c.id, details: { name, palette } });
+      const c = await createCampaign(q, userId, name, starter ? starterContent(palette) : emptyContent(palette), 'created');
+      await logActivity(q, { actorId: userId, action: 'campaign.created', entityType: 'campaign', entityId: c.id, details: { name, palette, starter } });
       return c;
     });
     return reply.status(201).send(toDto(row));

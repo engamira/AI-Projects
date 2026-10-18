@@ -111,6 +111,169 @@ const RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
   },
 };
 
+// ---------- Template-specific blocks ----------
+
+const sectionHeading = (t: string, c: Palette, bg: string, color: string, py: number): string =>
+  hasText(t) ? `<mj-section background-color="${bg}" padding="${py}px 24px 8px"><mj-column><mj-text align="center" color="${color}" font-size="24px" font-weight="700" line-height="1.3" padding="0">${para(t)}</mj-text></mj-column></mj-section>` : '';
+
+/** A row of up to three equal columns (they stack on phones). Empty columns are left out. */
+function columnsRow(bg: string, cols: string[], py: number, topPad = 0): string {
+  const used = cols.filter((x) => x.trim() !== '');
+  if (!used.length) return `<mj-section background-color="${bg}" padding="0"><mj-column><mj-spacer height="${py}px" /></mj-column></mj-section>`;
+  // each column keeps 16px below it, so cards that stack on a phone do not touch
+  return `<mj-section background-color="${bg}" padding="${topPad}px 12px ${Math.max(0, py - 16)}px">${used.map((x) => `<mj-column padding="0 12px 16px">${x}</mj-column>`).join('')}</mj-section>`;
+}
+
+/** Cards (destinations, products): picture, name, detail, price and a button. */
+function cardsBlock(p: Props, ctx: Ctx, noun: 'c'): string {
+  const c = ctx.c;
+  const third = Math.floor(ctx.width / 3);
+  const cols = [1, 2, 3].map((i) => {
+    const k = (x: string) => `${noun}${i}${x}`;
+    if (!['Image', 'Name', 'Detail', 'Price', 'ButtonText'].some((x) => hasText(s(p, k(x))))) return '';
+    return [
+      imageOrPlaceholder(ctx, s(p, k('Image')), s(p, k('ImageAlt')), third, '', { padding: '0 0 12px' }),
+      hasText(s(p, k('Name'))) ? `<mj-text align="center" color="${c.text}" font-size="18px" font-weight="700" padding="0 0 2px">${para(s(p, k('Name')))}</mj-text>` : '',
+      hasText(s(p, k('Detail'))) ? `<mj-text align="center" color="${c.muted}" font-size="14px" padding="0 0 4px">${para(s(p, k('Detail')))}</mj-text>` : '',
+      hasText(s(p, k('Price'))) ? `<mj-text align="center" color="${c.link}" font-size="17px" font-weight="700" padding="0 0 10px">${para(s(p, k('Price')))}</mj-text>` : '',
+      hasText(s(p, k('ButtonText'))) ? button(s(p, k('ButtonText')), s(p, k('ButtonUrl')), c.button, c.onButton, { align: 'center', padding: '0' }) : '',
+    ].join('');
+  });
+  const py = n(p, 'paddingY');
+  return sectionHeading(s(p, 'heading'), c, c.surface, c.text, py) + columnsRow(c.surface, cols, py, 12);
+}
+
+/** Closing call to action (booking, registration, shopping). */
+function ctaBlock(p: Props, ctx: Ctx): string {
+  const c = ctx.c;
+  const al = s(p, 'align');
+  const inner = [
+    hasText(s(p, 'heading')) ? `<mj-text align="${al}" color="${c.text}" font-size="28px" font-weight="700" line-height="1.25" padding="0 0 8px">${para(s(p, 'heading'))}</mj-text>` : '',
+    hasText(s(p, 'text')) ? `<mj-text align="${al}" color="${c.text}" font-size="16px" line-height="1.6" padding="0 0 16px">${para(s(p, 'text'))}</mj-text>` : '',
+    hasText(s(p, 'buttonText')) ? button(s(p, 'buttonText'), s(p, 'buttonUrl'), c.button, c.onButton, { align: al, padding: '0 0 10px' }) : '',
+    hasText(s(p, 'note')) ? `<mj-text align="${al}" color="${c.muted}" font-size="13px" padding="0">${para(s(p, 'note'))}</mj-text>` : '',
+  ].join('');
+  return section(c.surface, n(p, 'paddingY'), 24, inner || '<mj-spacer height="1px" />');
+}
+
+const SPECIALTY_RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
+  // ----- Travel -----
+  destinations: (p, ctx) => cardsBlock(p, ctx, 'c'),
+
+  fares: (p, ctx) => {
+    const c = ctx.c;
+    const py = n(p, 'paddingY');
+    const rows = [1, 2, 3, 4, 5]
+      .filter((i) => hasText(s(p, `r${i}Route`)) || hasText(s(p, `r${i}Price`)))
+      .map((i) => `<tr style="border-bottom:1px solid ${c.divider}"><td style="padding:12px 0;color:${c.text}">${esc(s(p, `r${i}Route`))}</td><td align="right" style="padding:12px 0;font-weight:700;color:${c.text}">${esc(s(p, `r${i}Price`))}</td></tr>`)
+      .join('');
+    const table = rows ? `<mj-table padding="0 0 8px" font-size="16px" cellpadding="0" cellspacing="0" width="100%">${rows}</mj-table>` : '';
+    const note = hasText(s(p, 'note')) ? `<mj-text align="center" color="${c.muted}" font-size="13px" padding="0 0 14px">${para(s(p, 'note'))}</mj-text>` : '';
+    const btn = hasText(s(p, 'buttonText')) ? button(s(p, 'buttonText'), s(p, 'buttonUrl'), c.button, c.onButton, { align: 'center', padding: '0' }) : '';
+    return sectionHeading(s(p, 'heading'), c, c.surface, c.text, py) + section(c.surface, 4, 40, table + note + btn || '<mj-spacer height="1px" />') + `<mj-section background-color="${c.surface}" padding="0"><mj-column><mj-spacer height="${py}px" /></mj-column></mj-section>`;
+  },
+
+  travel_offer: (p, ctx) => {
+    const c = ctx.c;
+    const al = s(p, 'align');
+    const inner = [
+      hasText(s(p, 'eyebrow')) ? `<mj-text align="${al}" color="${c.onDark}" font-size="13px" font-weight="700" letter-spacing="2px" padding="0 0 6px">${esc(s(p, 'eyebrow').toUpperCase())}</mj-text>` : '',
+      hasText(s(p, 'highlight')) ? `<mj-text align="${al}" color="${c.primary}" font-size="34px" font-weight="700" line-height="1.2" padding="0 0 6px">${para(s(p, 'highlight'))}</mj-text>` : '',
+      hasText(s(p, 'headline')) ? `<mj-text align="${al}" color="${c.onDark}" font-size="18px" line-height="1.5" padding="0 0 14px">${para(s(p, 'headline'))}</mj-text>` : '',
+      hasText(s(p, 'buttonText')) ? button(s(p, 'buttonText'), s(p, 'buttonUrl'), c.primary, c.onPrimary, { align: al, padding: '0' }) : '',
+    ].join('');
+    return section(c.dark, n(p, 'paddingY'), 24, inner || '<mj-spacer height="1px" />');
+  },
+
+  booking_cta: ctaBlock,
+
+  // ----- Events -----
+  event_details: (p, ctx) => {
+    const c = ctx.c;
+    const py = n(p, 'paddingY');
+    const head = [
+      hasText(s(p, 'eyebrow')) ? `<mj-text align="center" color="${c.onPrimary}" font-size="13px" font-weight="700" letter-spacing="2px" padding="0 0 6px">${esc(s(p, 'eyebrow').toUpperCase())}</mj-text>` : '',
+      hasText(s(p, 'title')) ? `<mj-text align="center" color="${c.onPrimary}" font-size="32px" font-weight="700" line-height="1.2" padding="0">${para(s(p, 'title'))}</mj-text>` : '',
+    ].join('');
+    const fact = (label: string, value: string) =>
+      hasText(value) ? `<mj-text align="center" color="${c.onPrimary}" font-size="12px" font-weight="700" letter-spacing="1.5px" padding="0 0 4px">${esc(label.toUpperCase())}</mj-text><mj-text align="center" color="${c.onPrimary}" font-size="18px" font-weight="700" padding="0 0 12px">${para(value)}</mj-text>` : '';
+    const facts = [fact(s(p, 'dateLabel'), s(p, 'dateValue')), fact(s(p, 'timeLabel'), s(p, 'timeValue')), fact(s(p, 'placeLabel'), s(p, 'placeValue'))];
+    const foot = [
+      hasText(s(p, 'address')) ? `<mj-text align="center" color="${c.onPrimary}" font-size="14px" padding="0 0 14px">${para(s(p, 'address'))}</mj-text>` : '',
+      hasText(s(p, 'buttonText')) ? button(s(p, 'buttonText'), s(p, 'buttonUrl'), c.heroButton, c.onHeroButton, { align: 'center', padding: '0' }) : '',
+    ].join('');
+    return `<mj-section background-color="${c.primary}" padding="${py}px 24px 16px"><mj-column>${head || '<mj-spacer height="1px" />'}</mj-column></mj-section>`
+      + columnsRow(c.primary, facts, 0, 4)
+      + `<mj-section background-color="${c.primary}" padding="4px 24px ${py}px"><mj-column>${foot || '<mj-spacer height="1px" />'}</mj-column></mj-section>`;
+  },
+
+  agenda: (p, ctx) => {
+    const c = ctx.c;
+    const py = n(p, 'paddingY');
+    const rows = [1, 2, 3, 4, 5, 6]
+      .filter((i) => hasText(s(p, `s${i}Title`)) || hasText(s(p, `s${i}Time`)))
+      .map((i) => `<mj-section background-color="${c.surface}" padding="12px 24px" border-bottom="1px solid ${c.divider}">`
+        + `<mj-column width="24%"><mj-text color="${c.link}" font-size="16px" font-weight="700" padding="0">${esc(s(p, `s${i}Time`))}</mj-text></mj-column>`
+        + `<mj-column width="76%"><mj-text color="${c.text}" font-size="16px" font-weight="700" padding="0 0 2px">${para(s(p, `s${i}Title`))}</mj-text>${hasText(s(p, `s${i}Text`)) ? `<mj-text color="${c.muted}" font-size="14px" line-height="1.5" padding="0">${para(s(p, `s${i}Text`))}</mj-text>` : ''}</mj-column></mj-section>`)
+      .join('');
+    return sectionHeading(s(p, 'heading'), c, c.surface, c.text, py) + (rows || '') + `<mj-section background-color="${c.surface}" padding="0"><mj-column><mj-spacer height="${Math.round(py / 2)}px" /></mj-column></mj-section>`;
+  },
+
+  speakers: (p, ctx) => {
+    const c = ctx.c;
+    const py = n(p, 'paddingY');
+    const cols = [1, 2, 3].map((i) => {
+      const k = (x: string) => `p${i}${x}`;
+      if (!['Image', 'Name', 'Role', 'Bio'].some((x) => hasText(s(p, k(x))))) return '';
+      const img = hasText(s(p, k('Image')))
+        ? `<mj-image src="${esc(s(p, k('Image')))}" alt="${esc(s(p, k('ImageAlt')))}" width="120px" border-radius="999px" align="center" padding="0 0 10px" />`
+        : `<mj-text align="center" color="${c.muted}" font-size="13px" padding="0 0 10px"><div style="width:120px;height:120px;line-height:120px;margin:0 auto;border-radius:60px;background:${c.placeholder}">Photo</div></mj-text>`;
+      return img
+        + (hasText(s(p, k('Name'))) ? `<mj-text align="center" color="${c.text}" font-size="18px" font-weight="700" padding="0 0 2px">${para(s(p, k('Name')))}</mj-text>` : '')
+        + (hasText(s(p, k('Role'))) ? `<mj-text align="center" color="${c.link}" font-size="14px" font-weight="700" padding="0 0 6px">${para(s(p, k('Role')))}</mj-text>` : '')
+        + (hasText(s(p, k('Bio'))) ? `<mj-text align="center" color="${c.muted}" font-size="14px" line-height="1.5" padding="0">${para(s(p, k('Bio')))}</mj-text>` : '');
+    });
+    return sectionHeading(s(p, 'heading'), c, c.surface, c.text, py) + columnsRow(c.surface, cols, py, 12);
+  },
+
+  registration_cta: ctaBlock,
+
+  // ----- Cosmetics -----
+  products: (p, ctx) => cardsBlock(p, ctx, 'c'),
+
+  benefits: (p, ctx) => {
+    const c = ctx.c;
+    const py = n(p, 'paddingY');
+    const cols = [1, 2, 3].map((i) => {
+      if (!hasText(s(p, `b${i}Title`)) && !hasText(s(p, `b${i}Text`))) return '';
+      return `<mj-text align="center" color="${c.secondary}" font-size="18px" padding="0 0 8px"><span style="display:inline-block;width:36px;height:36px;line-height:36px;border-radius:18px;background:${c.onSecondary};color:${c.secondary};font-weight:700">✓</span></mj-text>`
+        + (hasText(s(p, `b${i}Title`)) ? `<mj-text align="center" color="${c.onSecondary}" font-size="17px" font-weight="700" padding="0 0 4px">${para(s(p, `b${i}Title`))}</mj-text>` : '')
+        + (hasText(s(p, `b${i}Text`)) ? `<mj-text align="center" color="${c.onSecondary}" font-size="14px" line-height="1.5" padding="0">${para(s(p, `b${i}Text`))}</mj-text>` : '');
+    });
+    return `<mj-section background-color="${c.secondary}" padding="${py}px 24px 8px"><mj-column>${hasText(s(p, 'heading')) ? `<mj-text align="center" color="${c.onSecondary}" font-size="24px" font-weight="700" padding="0 0 8px">${para(s(p, 'heading'))}</mj-text>` : '<mj-spacer height="1px" />'}</mj-column></mj-section>`
+      + columnsRow(c.secondary, cols, py, 8);
+  },
+
+  promo_offer: (p, ctx) => {
+    const c = ctx.c;
+    const al = s(p, 'align');
+    const code = hasText(s(p, 'code'))
+      ? `<mj-text align="${al}" color="${c.onAccent}" font-size="15px" padding="0 0 12px">${hasText(s(p, 'codeLabel')) ? `${esc(s(p, 'codeLabel'))}&nbsp; ` : ''}<span style="display:inline-block;padding:8px 16px;border-radius:6px;background:${c.surface};color:${c.text};font-weight:700;letter-spacing:2px">${esc(s(p, 'code'))}</span></mj-text>`
+      : '';
+    const inner = [
+      hasText(s(p, 'eyebrow')) ? `<mj-text align="${al}" color="${c.onAccent}" font-size="13px" font-weight="700" letter-spacing="2px" padding="0 0 6px">${esc(s(p, 'eyebrow').toUpperCase())}</mj-text>` : '',
+      hasText(s(p, 'headline')) ? `<mj-text align="${al}" color="${c.onAccent}" font-size="34px" font-weight="700" line-height="1.2" padding="0 0 12px">${para(s(p, 'headline'))}</mj-text>` : '',
+      code,
+      hasText(s(p, 'buttonText')) ? button(s(p, 'buttonText'), s(p, 'buttonUrl'), c.dark, c.onDark, { align: al, padding: '0 0 10px' }) : '',
+      hasText(s(p, 'terms')) ? `<mj-text align="${al}" color="${c.onAccent}" font-size="12px" padding="0">${para(s(p, 'terms'))}</mj-text>` : '',
+    ].join('');
+    return section(c.accent, n(p, 'paddingY'), 24, inner || '<mj-spacer height="1px" />');
+  },
+
+  shopping_cta: ctaBlock,
+};
+Object.assign(RENDERERS, SPECIALTY_RENDERERS);
+
 export function renderBlock(block: BlockInstance, ctx: Ctx): string {
   const r = RENDERERS[block.type];
   if (!r) throw new Error(`No renderer for block type ${block.type}`);

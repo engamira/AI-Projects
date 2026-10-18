@@ -2,10 +2,15 @@
 // dropping a block into an email copies its defaults into an independent instance.
 // Changing a definition in a released version requires a new `version`.
 
-export type PropValue = string | number | boolean;
-export type Props = Record<string, PropValue>;
+import { ALIAS_HELP, aliasKey, align, area, image, link, num, text, toggle, url, type FieldDef, type Props, type RawDefinition } from './fields.js';
+import { SPECIALTY_DEFINITIONS, SPECIALTY_TYPES } from './specialty.js';
+import type { PaletteId } from './palettes.js';
 
-export const BLOCK_TYPES = [
+export type { FieldDef, FieldGroup, FieldKind, PropValue, Props } from './fields.js';
+export { ALIAS_HELP, aliasKey } from './fields.js';
+export { SPECIALTY_TYPES } from './specialty.js';
+
+export const SHARED_BLOCK_TYPES = [
   'hero',
   'text',
   'image',
@@ -15,59 +20,23 @@ export const BLOCK_TYPES = [
   'spacer',
   'social',
 ] as const;
+export const BLOCK_TYPES = [...SHARED_BLOCK_TYPES, ...SPECIALTY_TYPES] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
-
-export type FieldKind = 'text' | 'textarea' | 'url' | 'image' | 'select' | 'number' | 'toggle';
-export type FieldGroup = 'content' | 'style' | 'spacing';
-
-export type FieldDef = {
-  key: string;
-  label: string;
-  kind: FieldKind;
-  group: FieldGroup;
-  help?: string;
-  options?: { value: string; label: string }[]; // select
-  min?: number; // number
-  max?: number; // number, or max length for text
-  unit?: string; // number
-  optional?: boolean; // may be absent in emails saved before the field existed
-};
 
 export type BlockDefinition = {
   type: BlockType;
   version: number;
   label: string;
   description: string;
-  category: 'shared';
+  /** "shared" blocks are available in every template; the others only in the template of the same name. */
+  category: 'shared' | PaletteId;
   fields: FieldDef[];
   defaults: Props;
 };
 
-const ALIGN = [
-  { value: 'left', label: 'Left' },
-  { value: 'center', label: 'Center' },
-  { value: 'right', label: 'Right' },
-];
-
-const text = (key: string, label: string, group: FieldGroup = 'content', help?: string, max = 200): FieldDef => ({ key, label, kind: 'text', group, help, max });
-const area = (key: string, label: string, max = 2000): FieldDef => ({ key, label, kind: 'textarea', group: 'content', max });
-const url = (key: string, label: string, help?: string): FieldDef => ({ key, label, kind: 'url', group: 'content', help });
-export const ALIAS_HELP = 'Internal name for this link, used in reports and checks. Recipients never see it.';
-export const aliasKey = (urlKey: string): string => `${urlKey}Alias`;
-/** A link: its address plus an internal alias. */
-const link = (key: string, label: string, help?: string): FieldDef[] => [
-  url(key, label, help),
-  { key: aliasKey(key), label: `${label} alias`, kind: 'text', group: 'content', help: ALIAS_HELP, max: 80, optional: true },
-];
-const image = (key: string, label: string, help?: string): FieldDef => ({ key, label, kind: 'image', group: 'content', help });
-const align = (key = 'align', label = 'Alignment'): FieldDef => ({ key, label, kind: 'select', group: 'style', options: ALIGN });
-const num = (key: string, label: string, min: number, max: number, group: FieldGroup = 'spacing', unit = 'px'): FieldDef => ({ key, label, kind: 'number', group, min, max, unit });
-const toggle = (key: string, label: string, group: FieldGroup = 'content'): FieldDef => ({ key, label, kind: 'toggle', group });
-
 export const DEFAULT_ADDRESS = 'Dubai Silicon Oasis - pineapple tower G101 - Dubai - United Arab Emirates';
 
-type AnyDefinition = Omit<BlockDefinition, 'type'> & { type: string };
-const ALL_DEFINITIONS: AnyDefinition[] = [
+const ALL_DEFINITIONS: RawDefinition[] = [
   {
     type: 'header',
     version: 3,
@@ -227,7 +196,7 @@ const ALL_DEFINITIONS: AnyDefinition[] = [
 ];
 
 /** Blocks users can add to an email. (The header and footer are brand elements, not blocks.) */
-export const BLOCK_DEFINITIONS: BlockDefinition[] = ALL_DEFINITIONS.filter((d) => d.type !== 'header' && d.type !== 'footer') as BlockDefinition[];
+export const BLOCK_DEFINITIONS: BlockDefinition[] = [...ALL_DEFINITIONS.filter((d) => d.type !== 'header' && d.type !== 'footer'), ...SPECIALTY_DEFINITIONS] as BlockDefinition[];
 
 export const blockDefinition = (type: string): BlockDefinition | undefined => BLOCK_DEFINITIONS.find((d) => d.type === type);
 

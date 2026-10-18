@@ -54,6 +54,7 @@ try {
   // ---- create a campaign
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('E2E summer sale');
+  await page.getByLabel(/Start from the ready-made/).uncheck(); // these tests build from an empty email
   assert((await page.getByLabel('Template colors').inputValue()) === 'travel', 'Travel colors are the default choice');
   assert((await page.getByLabel('Template colors').locator('option').allInnerTexts()).join() === 'Travel,Events,Cosmetics', 'three template color sets to choose from');
   await page.getByRole('button', { name: 'Create and open' }).click();
@@ -150,6 +151,7 @@ try {
   // ---- library originals and other emails are unchanged
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('Second email');
+  await page.getByLabel(/Start from the ready-made/).uncheck();
   await page.getByLabel('Template colors').selectOption('events');
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('region', { name: 'Email canvas' }).waitFor();
@@ -210,6 +212,22 @@ try {
   await blocks.first().waitFor();
   assert((await blocks.nth(3).innerText()).includes('Summer fares from AED 999'), 'original is unchanged by edits to the copy');
   ok('duplicating a campaign creates an independent copy');
+
+  // ---- ready-made layout and template-specific blocks
+  await page.goto(`${BASE}/`);
+  await page.getByLabel('Campaign name').fill('Events invitation');
+  await page.getByLabel('Template colors').selectOption('events');
+  assert(await page.getByLabel(/Start from the ready-made Events layout/).isChecked(), 'the ready-made layout is on by default');
+  await page.getByRole('button', { name: 'Create and open' }).click();
+  await blocks.first().waitFor();
+  assert((await order()) === 'hero,event_details,text,agenda,speakers,registration_cta', `Events starter layout (${await order()})`);
+  await page.getByRole('heading', { name: 'Events blocks' }).waitFor();
+  assert((await page.getByRole('button', { name: 'Add Destinations to the end of the email' }).count()) === 0, 'travel blocks are not offered in an events email');
+  assert((await page.getByRole('button', { name: 'Add Registration button to the end of the email' }).count()) === 1, 'events blocks are offered');
+  await page.getByRole('button', { name: 'Add Agenda to the end of the email' }).click();
+  await page.getByText('All changes saved').waitFor();
+  assert((await blocks.count()) === 7, 'a template block can be added');
+  ok('a new email can start from the ready-made layout, and only offers its own template blocks');
 
   // ---- other roles can look but not change
   for (const role of ['admin', 'qa_reviewer'] as const) {

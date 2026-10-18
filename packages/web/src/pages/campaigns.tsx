@@ -10,6 +10,7 @@ export function CampaignsPage() {
   const [list, setList] = useState<CampaignSummary[] | null>(null);
   const [name, setName] = useState('');
   const [palette, setPalette] = useState<PaletteId>('travel');
+  const [starter, setStarter] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => setList(await api<CampaignSummary[]>('GET', '/api/campaigns')), []);
@@ -19,7 +20,7 @@ export function CampaignsPage() {
     e.preventDefault();
     setError('');
     try {
-      const c = await api<CampaignDto>('POST', '/api/campaigns', { name, palette });
+      const c = await api<CampaignDto>('POST', '/api/campaigns', { name, palette, starter });
       nav(`/campaigns/${c.id}`);
     } catch (err) { setError(errorText(err)); }
   }
@@ -48,7 +49,8 @@ export function CampaignsPage() {
             </div>
             <div style={{ flex: '0 0 auto' }}><button className="primary">Create and open</button></div>
           </form>
-          <p className="muted small" style={{ marginBottom: 0 }}>Colors are set by the template you choose and cannot be changed later. Ready-made starter layouts for each template arrive in the next milestone.</p>
+          <label className="check-inline"><input type="checkbox" checked={starter} onChange={(e) => setStarter(e.target.checked)} /> Start from the ready-made {PALETTES[palette].label} layout</label>
+          <p className="muted small" style={{ marginBottom: 0 }}>Colors are set by the template you choose and cannot be changed later. Every block in a starter layout is your own copy to edit, replace or delete.</p>
         </div>
       )}
       {error && <p className="error" role="alert">{error}</p>}

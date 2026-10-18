@@ -21,7 +21,7 @@ const newCampaign = async (name = 'Spring sale', client: Client = builder, palet
 const block = (type: (typeof BLOCK_TYPES)[number]) => createInstance(blockDefinition(type)!);
 
 describe('block library', () => {
-  it('serves all ten shared blocks as originals', async () => {
+  it('serves every block as an original, in library order', async () => {
     const res = await builder.get('/api/library/blocks');
     expect(res.status).toBe(200);
     expect(res.body.blocks.map((b: { type: string }) => b.type)).toEqual([...BLOCK_TYPES]);
@@ -60,7 +60,7 @@ describe('block library', () => {
 
   it('every definition has defaults that pass validation (a fresh block is always valid)', () => {
     for (const def of BLOCK_DEFINITIONS) {
-      const content: EmailContent = { ...emptyContent(), blocks: [createInstance(def)] };
+      const content: EmailContent = { ...emptyContent(def.category === 'shared' ? 'travel' : def.category), blocks: [createInstance(def)] };
       const v = validateContent(content);
       expect(v.ok, `${def.type}: ${!v.ok ? v.error : ''}`).toBe(true);
     }

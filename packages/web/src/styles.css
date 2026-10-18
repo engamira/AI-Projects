@@ -217,3 +217,7 @@ ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .brand-block .block-bar { background: var(--muted); color: var(--surface); }
 .brand-block .block-bar a { color: var(--surface); }
 @media (max-width: 900px) { .brand-grid { grid-template-columns: 1fr; } }
+
+.lib-group { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 16px 0 6px; }
+.check-inline { display: flex; align-items: center; gap: 8px; font-weight: 400; margin: 12px 0 8px; }
+.check-inline input { width: auto; }

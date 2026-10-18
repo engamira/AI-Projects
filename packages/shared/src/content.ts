@@ -201,6 +201,9 @@ export function validateContent(input: unknown): ValidationResult {
     seen.add(b.id);
     if (!(BLOCK_TYPES as readonly string[]).includes(b.type)) return { ok: false, error: `Block ${i + 1}: unknown block type "${b.type}"` };
     const def = blockDefinition(b.type)!;
+    if (def.category !== 'shared' && def.category !== palette) {
+      return { ok: false, error: `Block ${i + 1} (${def.label}) belongs to the ${def.category} template and cannot be used in this email.` };
+    }
     const err = checkFields(def.fields, b.props, `Block ${i + 1} (${def.label})`);
     if (err) return { ok: false, error: err };
   }

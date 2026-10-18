@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { paletteOf, type BlockInstance, type EmailSettings, type Palette, type Props } from '@cl/shared';
 import { pictureSrc } from '../api';
+import { SpecialtyView } from './SpecialtyViews';
 
 // An approximate on-screen view of each block while editing. The Preview tab shows the real generated email.
 // Colors always come from the campaign's template palette: blocks have no color settings.
@@ -119,6 +120,6 @@ export function BlockView({ block, settings }: { block: BlockInstance; settings:
         </Wrap>
       );
     default:
-      return <div style={{ padding: 12, color: 'red' }}>Unknown block</div>;
+      return <SpecialtyView type={block.type as string} p={p} c={c} />;
   }
 }

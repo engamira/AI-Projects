@@ -414,7 +414,14 @@ export function EditorPage() {
             <aside className="panel-left" aria-label="Block library">
               <h2>Blocks</h2>
               <p className="muted small">Drag a block into the email, or press Add. Each one becomes your own copy to edit.</p>
-              <ul className="lib-list">{lib.map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} />)}</ul>
+              <h3 className="lib-group">Basic blocks</h3>
+              <ul className="lib-list">{lib.filter((d) => d.category === 'shared').map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} />)}</ul>
+              {lib.some((d) => d.category === s.content.settings.palette) && (
+                <>
+                  <h3 className="lib-group">{paletteOf(s.content.settings.palette).label} blocks</h3>
+                  <ul className="lib-list">{lib.filter((d) => d.category === s.content.settings.palette).map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} />)}</ul>
+                </>
+              )}
             </aside>
             <section className="panel-center" aria-label="Email canvas"><Canvas canEdit={canEdit} /></section>
             <aside className="panel-right" aria-label="Properties"><Properties canEdit={canEdit} /></aside>
