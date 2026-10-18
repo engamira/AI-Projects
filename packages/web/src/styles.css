@@ -195,3 +195,25 @@ label.inline select, label.inline input { width: auto; }
 .swatches { display: inline-flex; }
 .swatches i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--surface); margin-left: -4px; }
 .swatches i:first-child { margin-left: 0; }
+
+/* ---------- Asset library, picture fields, brand settings ---------- */
+.asset-lib .asset-grid { list-style: none; padding: 0; margin: 16px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.asset-grid li { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--surface); display: flex; flex-direction: column; gap: 4px; }
+.asset-thumb { aspect-ratio: 4 / 3; display: grid; place-items: center; background: repeating-conic-gradient(rgba(128,128,128,.12) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px; border-radius: 6px; overflow: hidden; }
+.asset-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.asset-name { font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: grid; place-items: center; z-index: 50; padding: 16px; }
+.dialog { background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 20px; width: min(760px, 100%); max-height: 86vh; overflow: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
+.picture-field { display: flex; flex-direction: column; gap: 6px; }
+.picture-thumb { max-width: 100%; max-height: 90px; object-fit: contain; align-self: flex-start; border: 1px solid var(--border); border-radius: 6px; padding: 4px; background: #fff; }
+.picture-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.brand-tabs { margin: 12px 0; }
+.brand-tabs button { border-radius: var(--btn-radius); margin-right: 4px; }
+.brand-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.brand-preview { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.brand-block { cursor: default; outline: 2px dashed var(--border); outline-offset: -2px; }
+.brand-block .block-bar { background: var(--muted); color: var(--surface); }
+.brand-block .block-bar a { color: var(--surface); }
+@media (max-width: 900px) { .brand-grid { grid-template-columns: 1fr; } }

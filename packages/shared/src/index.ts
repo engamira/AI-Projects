@@ -16,6 +16,7 @@ export const CAPABILITIES = [
   'brand.manage',
   'rules.manage',
   'html.custom',
+  'assets.manage',
   'campaign.view',
   'campaign.edit',
   'campaign.submit',
@@ -27,8 +28,8 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
-  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'campaign.view', 'campaign.test_send', 'campaign.send'],
-  builder: ['campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.test_send', 'campaign.send'],
+  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'assets.manage', 'campaign.view', 'campaign.test_send', 'campaign.send'],
+  builder: ['assets.manage', 'campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.test_send', 'campaign.send'],
   qa_reviewer: ['campaign.view', 'qa.review', 'qa.approve'],
 };
 
@@ -114,6 +115,7 @@ export type ActivityDto = {
 // ---------- Campaigns and block library ----------
 export * from './blocks.js';
 export * from './palettes.js';
+export * from './brand.js';
 export * from './content.js';
 
 import type { BlockDefinition } from './blocks.js';

@@ -78,6 +78,8 @@ export function normalizeContent<T>(input: T): T {
     if (!c.settings.palette) c.settings.palette = 'travel';
   }
   if (Array.isArray(c.blocks)) {
+    // The header and footer are now shared brand elements: older emails that carried their own copies lose them.
+    c.blocks = c.blocks.filter((b) => !(b && (b.type === 'header' || b.type === 'footer')));
     for (const b of c.blocks) {
       const legacy = b && typeof b.type === 'string' ? LEGACY_COLOR_PROPS[b.type] : undefined;
       if (legacy && b.props && typeof b.props === 'object') for (const k of legacy) delete b.props[k];
@@ -111,6 +113,21 @@ export function cloneContent(c: EmailContent, newIds = false): EmailContent {
 
 const URL_OK = /^(https?:\/\/[^\s<>"'`\\]+|mailto:[^\s<>"'`\\]+|tel:[+0-9() -]+)$/i;
 const HTTPS_OK = /^https:\/\/[^\s<>"'`\\]+$/i;
+/** A picture from the asset library, stored as "asset:<id>" so emails do not depend on the web address of the app. */
+export const ASSET_REF = /^asset:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+/** Every asset id referenced anywhere inside the given value (blocks, brand header/footer, ...). */
+export function collectAssetIds(value: unknown, out = new Set<string>()): string[] {
+  if (typeof value === 'string') {
+    const m = ASSET_REF.exec(value);
+    if (m) out.add(m[1]!.toLowerCase());
+  } else if (Array.isArray(value)) {
+    for (const v of value) collectAssetIds(v, out);
+  } else if (value && typeof value === 'object') {
+    for (const v of Object.values(value)) collectAssetIds(v, out);
+  }
+  return [...out];
+}
 export const PLACEHOLDER = /^\{\{\s*[a-z_][a-z0-9_]*\s*\}\}$/;
 const EMAIL = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
 // eslint-disable-next-line no-control-regex
@@ -136,14 +153,14 @@ export function checkField(f: FieldDef, v: unknown): string | null {
       if (CONTROL.test(v)) return bad('contains invalid characters');
       if (v === '') return null;
       if (f.kind === 'url') return URL_OK.test(v) || PLACEHOLDER.test(v) || /^https?:\/\/[^\s<>"'`\\]*\{\{[^}]*\}\}/.test(v) ? null : bad('must start with https://, http://, mailto: or tel:');
-      if (f.kind === 'image') return HTTPS_OK.test(v) ? null : bad('must be a secure https:// image address');
+      if (f.kind === 'image') return HTTPS_OK.test(v) || ASSET_REF.test(v) ? null : bad('must be a picture from the asset library or a secure https:// image address');
       if (f.key === 'senderEmail' || f.key === 'replyTo') return EMAIL.test(v) ? null : bad('is not a valid email address');
       return null;
     }
   }
 }
 
-function checkFields(fields: FieldDef[], values: Record<string, unknown>, label: string): string | null {
+export function checkFields(fields: FieldDef[], values: Record<string, unknown>, label: string): string | null {
   const keys = new Set(fields.map((f) => f.key));
   for (const k of Object.keys(values)) if (!keys.has(k)) return `${label}: unknown setting "${k}"`;
   for (const f of fields) {

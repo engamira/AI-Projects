@@ -41,13 +41,13 @@ describe('block library', () => {
   });
 
   it('refuses to start if a released version was edited without a new version number', async () => {
-    const edited = BLOCK_DEFINITIONS.map((d) => (d.type === 'header' ? { ...d, label: 'Renamed header' } : d));
-    await expect(syncBlockDefinitions(t.db, edited)).rejects.toThrow(/header.*changed without a new version/);
-    const newVersion = BLOCK_DEFINITIONS.map((d) => (d.type === 'header' ? { ...d, version: d.version + 1, label: 'Header next' } : d));
+    const edited = BLOCK_DEFINITIONS.map((d) => (d.type === 'hero' ? { ...d, label: 'Renamed hero' } : d));
+    await expect(syncBlockDefinitions(t.db, edited)).rejects.toThrow(/hero.*changed without a new version/);
+    const newVersion = BLOCK_DEFINITIONS.map((d) => (d.type === 'hero' ? { ...d, version: d.version + 1, label: 'Hero next' } : d));
     await syncBlockDefinitions(t.db, newVersion); // a new version number is accepted
-    expect((await builder.get('/api/library/blocks')).body.blocks.find((b: { type: string }) => b.type === 'header').version).toBe(BLOCK_DEFINITIONS.find((d) => d.type === 'header')!.version + 1);
+    expect((await builder.get('/api/library/blocks')).body.blocks.find((b: { type: string }) => b.type === 'hero').version).toBe(BLOCK_DEFINITIONS.find((d) => d.type === 'hero')!.version + 1);
     // existing emails keep working: version 1 is still stored
-    expect((await t.db.query(`SELECT count(*)::int AS n FROM block_definition WHERE type = 'header'`)).rows[0].n).toBe(2);
+    expect((await t.db.query(`SELECT count(*)::int AS n FROM block_definition WHERE type = 'hero'`)).rows[0].n).toBe(2);
   });
 
   it('cannot be changed through the API or the database', async () => {
@@ -330,7 +330,7 @@ describe('revisions and duplication', () => {
     const v2 = { ...emptyContent(), blocks: [block('hero')] };
     await builder.put(`/api/campaigns/${c.id}/draft`, { content: v2, baseVersion: 1 });
     expect((await builder.post(`/api/campaigns/${c.id}/revisions`, { label: 'With hero' })).status).toBe(201);
-    const v3 = { ...v2, blocks: [...v2.blocks, block('footer')] };
+    const v3 = { ...v2, blocks: [...v2.blocks, block('text')] };
     await builder.put(`/api/campaigns/${c.id}/draft`, { content: v3, baseVersion: 2 });
     await builder.post(`/api/campaigns/${c.id}/revisions`, { label: 'With footer' });
 

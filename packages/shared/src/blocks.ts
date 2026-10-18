@@ -6,7 +6,6 @@ export type PropValue = string | number | boolean;
 export type Props = Record<string, PropValue>;
 
 export const BLOCK_TYPES = [
-  'header',
   'hero',
   'text',
   'image',
@@ -15,7 +14,6 @@ export const BLOCK_TYPES = [
   'divider',
   'spacer',
   'social',
-  'footer',
 ] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 
@@ -68,7 +66,8 @@ const toggle = (key: string, label: string, group: FieldGroup = 'content'): Fiel
 
 export const DEFAULT_ADDRESS = 'Dubai Silicon Oasis - pineapple tower G101 - Dubai - United Arab Emirates';
 
-export const BLOCK_DEFINITIONS: BlockDefinition[] = [
+type AnyDefinition = Omit<BlockDefinition, 'type'> & { type: string };
+const ALL_DEFINITIONS: AnyDefinition[] = [
   {
     type: 'header',
     version: 3,
@@ -227,7 +226,22 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
       unsubscribeText: 'Unsubscribe', unsubscribeUrl: '{{unsubscribe_url}}', unsubscribeUrlAlias: 'Unsubscribe', align: 'center', paddingY: 24 } },
 ];
 
+/** Blocks users can add to an email. (The header and footer are brand elements, not blocks.) */
+export const BLOCK_DEFINITIONS: BlockDefinition[] = ALL_DEFINITIONS.filter((d) => d.type !== 'header' && d.type !== 'footer') as BlockDefinition[];
+
 export const blockDefinition = (type: string): BlockDefinition | undefined => BLOCK_DEFINITIONS.find((d) => d.type === type);
+
+// ---------- Shared brand header and footer (one set per template, edited in Brand settings) ----------
+const headerDef = ALL_DEFINITIONS.find((d) => d.type === 'header')!;
+const footerDef = ALL_DEFINITIONS.find((d) => d.type === 'footer')!;
+const socialDef = ALL_DEFINITIONS.find((d) => d.type === 'social')!;
+const socialExtra = (list: FieldDef[]) => list.filter((f) => f.key !== 'align' && f.key !== 'paddingY');
+
+export const BRAND_HEADER_FIELDS: FieldDef[] = headerDef.fields;
+export const BRAND_HEADER_DEFAULTS: Props = headerDef.defaults;
+/** The footer holds the company details, the unsubscribe link and the social links. */
+export const BRAND_FOOTER_FIELDS: FieldDef[] = [...footerDef.fields, ...socialExtra(socialDef.fields)];
+export const BRAND_FOOTER_DEFAULTS: Props = { ...footerDef.defaults, ...Object.fromEntries(Object.entries(socialDef.defaults).filter(([k]) => k !== 'align' && k !== 'paddingY')) };
 
 /** Color properties removed when colors became template-controlled. Older saved emails may still contain them; they are dropped on load. */
 export const LEGACY_COLOR_PROPS: Record<string, string[]> = {

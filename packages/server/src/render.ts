@@ -1,5 +1,5 @@
 import mjml2html from 'mjml';
-import { normalizeContent, paletteOf, type BlockInstance, type EmailContent, type Palette, type Props } from '@cl/shared';
+import { ASSET_REF, defaultBrand, normalizeContent, paletteOf, type BlockInstance, type EmailContent, type Palette, type Props } from '@cl/shared';
 
 // Turns the stored structured content into email HTML (via MJML).
 // Every text and URL value is escaped here; content is also validated before it is ever saved.
@@ -98,7 +98,10 @@ const RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
 
   footer: (p, ctx) => {
     const c = ctx.c;
+    const nets: [string, string][] = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['x', 'X'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']];
+    const social = nets.filter(([k]) => hasText(s(p, k))).map(([k, label]) => `<a href="${esc(s(p, k))}" style="color:${c.footerLink};text-decoration:underline">${label}</a>`);
     const lines = [
+      social.length ? social.join(' &nbsp;·&nbsp; ') : '',
       hasText(s(p, 'companyName')) ? `<strong>${esc(s(p, 'companyName'))}</strong>` : '',
       hasText(s(p, 'address')) ? esc(s(p, 'address')) : '',
       hasText(s(p, 'notice')) ? para(s(p, 'notice')) : '',
@@ -114,12 +117,29 @@ export function renderBlock(block: BlockInstance, ctx: Ctx): string {
   return r(block.props, ctx);
 }
 
-export function buildMjml(input: EmailContent): string {
-  const content = normalizeContent(input); // older saved emails may still hold color properties; they are ignored
+export type BrandParts = { header: Props; footer: Props };
+export type RenderOptions = { baseUrl?: string; brand?: BrandParts };
+
+/** Pictures from the asset library are stored as "asset:<id>"; emails need real web addresses. */
+function resolveAssets<T>(value: T, baseUrl: string): T {
+  if (typeof value === 'string') {
+    const m = ASSET_REF.exec(value);
+    return (m ? `${baseUrl}/media/${m[1]!.toLowerCase()}` : value) as T;
+  }
+  if (Array.isArray(value)) return value.map((v) => resolveAssets(v, baseUrl)) as T;
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveAssets(v, baseUrl)])) as T;
+  return value;
+}
+
+export function buildMjml(input: EmailContent, opts: RenderOptions = {}): string {
+  const baseUrl = (opts.baseUrl ?? 'http://localhost:3000').replace(/\/+$/, '');
+  const content = resolveAssets(normalizeContent(input), baseUrl); // older saved emails may still hold color properties; they are ignored
   const { settings: st, blocks } = content;
   const c = paletteOf(st.palette);
   const ctx: Ctx = { width: st.contentWidth, c };
-  const body = blocks.length ? blocks.map((x) => renderBlock(x, ctx)).join('\n') : `<mj-section background-color="${c.surface}"><mj-column><mj-text>&nbsp;</mj-text></mj-column></mj-section>`;
+  // Every email of a template starts with that template's shared header and ends with its shared footer.
+  const brand = resolveAssets(opts.brand ?? defaultBrand(c.id), baseUrl);
+  const body = [RENDERERS.header!(brand.header, ctx), ...blocks.map((x) => renderBlock(x, ctx)), RENDERERS.footer!(brand.footer, ctx)].join('\n');
   return `<mjml>
 <mj-head>
   <mj-title>${esc(st.subject)}</mj-title>
@@ -135,7 +155,7 @@ ${body}
 }
 
 /** The one place that produces email HTML: preview, QA and sending all use this output. */
-export async function renderEmail(content: EmailContent): Promise<{ html: string; warnings: string[] }> {
-  const out = await mjml2html(buildMjml(content), { validationLevel: 'soft', minify: false });
+export async function renderEmail(content: EmailContent, opts: RenderOptions = {}): Promise<{ html: string; warnings: string[] }> {
+  const out = await mjml2html(buildMjml(content, opts), { validationLevel: 'soft', minify: false });
   return { html: out.html, warnings: out.errors.map((e) => e.formattedMessage ?? e.message ?? 'Unknown MJML warning') };
 }

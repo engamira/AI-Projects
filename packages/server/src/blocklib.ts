@@ -31,5 +31,6 @@ export async function listLibrary(db: Queryable): Promise<BlockDefinition[]> {
     `SELECT DISTINCT ON (type) definition FROM block_definition ORDER BY type, version DESC`,
   );
   const order = new Map(BLOCK_DEFINITIONS.map((d, i) => [d.type, i]));
-  return r.rows.map((x) => x.definition).sort((a, b) => (order.get(a.type) ?? 99) - (order.get(b.type) ?? 99));
+  // Only blocks the code still offers (the header and footer are brand elements now, not blocks).
+  return r.rows.map((x) => x.definition).filter((d) => order.has(d.type)).sort((a, b) => (order.get(a.type) ?? 99) - (order.get(b.type) ?? 99));
 }

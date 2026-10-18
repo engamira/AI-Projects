@@ -1,10 +1,13 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { checkField, type FieldDef, type FieldGroup, type PropValue } from '@cl/shared';
+import { pictureSrc } from '../api';
+import { AssetPickerDialog } from './AssetPicker';
 
 const GROUP_LABELS: Record<FieldGroup, string> = { content: 'Content', style: 'Style', spacing: 'Spacing' };
 
 function FieldInput({ field, value, onChange }: { field: FieldDef; value: PropValue; onChange: (v: PropValue) => void }) {
   const id = useId();
+  const [picking, setPicking] = useState(false);
   const error = checkField(field, value);
   const describedBy = [field.help ? `${id}-help` : '', error ? `${id}-err` : ''].filter(Boolean).join(' ') || undefined;
   const common = { id, 'aria-invalid': !!error, 'aria-describedby': describedBy };
@@ -38,14 +41,29 @@ function FieldInput({ field, value, onChange }: { field: FieldDef; value: PropVa
         </div>
       );
       break;
+    case 'image': {
+      const v = String(value);
+      control = (
+        <div className="picture-field">
+          {v && <img className="picture-thumb" src={pictureSrc(v)} alt="" />}
+          <div className="picture-actions">
+            <button type="button" onClick={() => setPicking(true)}>{v ? 'Change picture' : 'Choose or upload a picture'}</button>
+            {v && <button type="button" className="link" onClick={() => onChange('')}>Remove</button>}
+          </div>
+          <input {...common} type="text" inputMode="url" placeholder="…or paste a secure https:// picture address" maxLength={2000} value={v.startsWith('asset:') ? '' : v} onChange={(e) => onChange(e.target.value)} />
+          {picking && <AssetPickerDialog onClose={() => setPicking(false)} onPick={(ref) => onChange(ref)} />}
+        </div>
+      );
+      break;
+    }
     default:
       control = (
         <input
           {...common}
           type="text"
-          inputMode={field.kind === 'url' || field.kind === 'image' ? 'url' : undefined}
-          placeholder={field.kind === 'url' ? 'https://…' : field.kind === 'image' ? 'https://… (image library coming soon)' : undefined}
-          maxLength={field.kind === 'url' || field.kind === 'image' ? 2000 : field.max}
+          inputMode={field.kind === 'url' ? 'url' : undefined}
+          placeholder={field.kind === 'url' ? 'https://…' : undefined}
+          maxLength={field.kind === 'url' ? 2000 : field.max}
           value={String(value)}
           onChange={(e) => onChange(e.target.value)}
         />

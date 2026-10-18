@@ -5,6 +5,7 @@ import { SessionProvider, useSession } from './session';
 import { AcceptInvitePage, EnrollPage, LoginPage, VerifyPage } from './pages/auth';
 import { AccountPage, ActivityPage, Shell, UsersPage, WideShell } from './pages/app';
 import { CampaignsPage } from './pages/campaigns';
+import { AssetsPage, BrandPage } from './pages/brand';
 import { EditorPage } from './editor/EditorPage';
 import './styles.css';
 
@@ -33,6 +34,8 @@ function Gate() {
       <Route element={<Shell />}>
         <Route path="/" element={<CampaignsPage />} />
         <Route path="/account" element={<AccountPage />} />
+        {can('assets.manage') && <Route path="/assets" element={<AssetsPage />} />}
+        {can('brand.manage') && <Route path="/admin/brand" element={<BrandPage />} />}
         {can('users.manage') && <Route path="/admin/users" element={<UsersPage />} />}
         {can('activity.view') && <Route path="/admin/activity" element={<ActivityPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />

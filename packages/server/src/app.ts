@@ -10,6 +10,9 @@ import accessPlugin from './access.js';
 import type { AppConfig } from './config.js';
 import type { Db } from './db.js';
 import { syncBlockDefinitions } from './blocklib.js';
+import { ensureBrandProfiles } from './brand.js';
+import { assetRoutes } from './routes/assets.js';
+import { brandRoutes } from './routes/brand.js';
 import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { notificationRoutes } from './routes/notifications.js';
@@ -61,10 +64,13 @@ export async function buildApp({ db, config, webDir, onRoute }: AppOptions): Pro
   });
 
   await syncBlockDefinitions(db);
+  await ensureBrandProfiles(db);
   authRoutes(app, db, config);
   userRoutes(app, db, config);
   notificationRoutes(app, db);
-  campaignRoutes(app, db);
+  campaignRoutes(app, db, config);
+  brandRoutes(app, db);
+  await assetRoutes(app, db);
 
   if (webDir && existsSync(webDir)) {
     await app.register(fastifyStatic, { root: webDir });

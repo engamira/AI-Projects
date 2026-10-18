@@ -79,6 +79,8 @@ function Topbar() {
         <span className="brand">Campaign LEGO</span>
         <nav aria-label="Main">
           <NavLink to="/" end>Campaigns</NavLink>
+          {can('assets.manage') && <NavLink to="/assets">Pictures</NavLink>}
+          {can('brand.manage') && <NavLink to="/admin/brand">Brand</NavLink>}
           {can('users.manage') && <NavLink to="/admin/users">Users</NavLink>}
           {can('activity.view') && <NavLink to="/admin/activity">Activity</NavLink>}
           <NavLink to="/account">Account</NavLink>

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   canonicalJson,
   cloneContent,
+  collectAssetIds,
   PALETTE_IDS,
   emptyContent,
   normalizeContent,
@@ -15,7 +16,10 @@ import {
   type RevisionDto,
   type SaveDraftResponse,
 } from '@cl/shared';
+import { missingAssets } from '../assets.js';
 import { listLibrary } from '../blocklib.js';
+import { latestProfile } from '../brand.js';
+import type { AppConfig } from '../config.js';
 import { sha256 } from '../crypto.js';
 import { DEFAULT_WORKSPACE_ID, withTransaction, type Db, type Queryable } from '../db.js';
 import { renderEmail } from '../render.js';
@@ -47,7 +51,7 @@ const createBody = nameBody.extend({ palette: z.enum(PALETTE_IDS).default('trave
 const labelBody = z.object({ label: z.string().trim().max(120).optional() });
 const draftBody = z.object({ content: z.unknown(), baseVersion: z.number().int().min(1) });
 
-export function campaignRoutes(app: FastifyInstance, db: Db): void {
+export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig): void {
   const notFound = (reply: FastifyReply) => reply.status(404).send({ error: 'not_found', message: 'Campaign not found.' });
 
   async function getCampaign(q: Queryable, id: string, lock = false): Promise<CampaignRow | undefined> {
@@ -148,6 +152,8 @@ export function campaignRoutes(app: FastifyInstance, db: Db): void {
     const v = validateContent(body.content);
     if (!v.ok) return reply.status(400).send({ error: 'invalid_content', message: v.error });
     const hash = hashOf(v.content);
+    const missing = await missingAssets(db, collectAssetIds(v.content));
+    if (missing.length) return reply.status(400).send({ error: 'missing_asset', message: 'A picture used in this email no longer exists in the asset library.' });
 
     const current = await getCampaign(db, id);
     if (!current) return notFound(reply);
@@ -265,6 +271,8 @@ export function campaignRoutes(app: FastifyInstance, db: Db): void {
       if (!r.rows[0]) return notFound(reply);
       content = normalizeContent(r.rows[0].content);
     }
-    return renderEmail(content);
+    // Every email shows the shared header and footer of its template (latest version).
+    const brand = await latestProfile(db, content.settings.palette);
+    return renderEmail(content, { baseUrl: config.baseUrl, brand });
   });
 }

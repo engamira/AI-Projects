@@ -21,7 +21,9 @@ import {
   paletteOf,
   type BlockDefinition,
   type BlockInstance,
+  type BrandProfileDto,
   type CampaignDto,
+  type EmailSettings,
   type LibraryResponse,
   type PreviewResponse,
   type PropValue,
@@ -32,6 +34,7 @@ import { useSession } from '../session';
 import { BlockView } from './BlockView';
 import { FieldForm } from './Fields';
 import { flushSave, useEditor } from './store';
+import { useBrand } from './useBrand';
 
 let libraryCache: BlockDefinition[] | null = null;
 function useLibrary(): BlockDefinition[] {
@@ -98,18 +101,37 @@ function Canvas({ canEdit }: { canEdit: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'canvas-end' });
   const st = content.settings;
   const pal = paletteOf(st.palette);
+  const brand = useBrand();
+  const profile = brand?.[st.palette];
   return (
     <div className="canvas-scroll" onClick={() => select(null)}>
       <div className="canvas-page" style={{ background: pal.page, padding: 16 }}>
         <div style={{ maxWidth: st.contentWidth, margin: '0 auto', background: pal.surface, fontFamily: st.fontFamily }} data-testid="canvas">
+          {profile && <BrandBlock kind="header" profile={profile} settings={st} />}
           <SortableContext items={content.blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
             {content.blocks.map((b, i) => <SortableBlock key={b.id} block={b} index={i} total={content.blocks.length} canEdit={canEdit} />)}
           </SortableContext>
           <div ref={setNodeRef} className={`drop-end ${isOver ? 'over' : ''}`}>
             {content.blocks.length === 0 ? (canEdit ? 'Drag a block here, or press “Add” on a block in the list.' : 'This email has no blocks yet.') : canEdit ? 'Drop here to add at the end' : ''}
           </div>
+          {profile && <BrandBlock kind="footer" profile={profile} settings={st} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The shared header or footer of the template: shown in place, but locked inside a campaign. */
+function BrandBlock({ kind, profile, settings }: { kind: 'header' | 'footer'; profile: BrandProfileDto; settings: EmailSettings }) {
+  const { can } = useSession();
+  const block = { id: `brand-${kind}`, type: kind, sourceVersion: profile.version, props: profile[kind] } as unknown as BlockInstance;
+  return (
+    <div className="canvas-block brand-block" data-brand={kind} onClick={(e) => e.stopPropagation()}>
+      <div className="block-bar" style={{ display: 'flex' }}>
+        <span className="block-label">Shared {kind} of the {paletteOf(settings.palette).label} template (locked)</span>
+        {can('brand.manage') && <Link to="/admin/brand" style={{ color: 'inherit' }}>Edit in Brand settings</Link>}
+      </div>
+      <div className="block-body"><BlockView block={block} settings={settings} /></div>
     </div>
   );
 }

@@ -43,6 +43,24 @@ export class Client {
   patch = (url: string, body?: unknown) => this.request('PATCH', url, body);
   put = (url: string, body?: unknown) => this.request('PUT', url, body);
 
+  /** Uploads one file as a multipart form, like the browser does. */
+  async upload(url: string, filename: string, data: Buffer, mime = 'image/png'): Promise<Res> {
+    const boundary = '----cltest' + Math.random().toString(16).slice(2);
+    const head = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`);
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const h: Record<string, string> = { 'content-type': `multipart/form-data; boundary=${boundary}` };
+    if (this.cookies.size) h.cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+    if (this.csrf) h['x-csrf-token'] = this.csrf;
+    const res = await this.app.inject({ method: 'POST', url, headers: h, payload: Buffer.concat([head, data, tail]) });
+    let parsed: any = res.body;
+    try {
+      parsed = JSON.parse(res.body);
+    } catch {
+      /* not JSON */
+    }
+    return { status: res.statusCode, body: parsed, headers: res.headers };
+  }
+
   async refreshCsrf(): Promise<void> {
     this.csrf = (await this.get('/api/auth/me')).body.csrfToken;
   }

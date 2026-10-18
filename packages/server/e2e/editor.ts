@@ -48,7 +48,7 @@ const browser = await chromium.launch();
 try {
   await t.app.listen({ port: PORT, host: '127.0.0.1' });
   const { page } = await openAs(browser, 'builder');
-  const blocks = page.locator('.canvas-block');
+  const blocks = page.locator('.canvas-block:not(.brand-block)'); // the shared header and footer are locked and not counted
   const saved = () => page.getByText('All changes saved').waitFor();
 
   // ---- create a campaign
@@ -62,7 +62,7 @@ try {
   ok('builder creates a campaign and opens the editor');
 
   // ---- add blocks: with the Add buttons, and by dragging from the library
-  await page.getByRole('button', { name: 'Add Header / logo to the end of the email' }).click();
+  await page.getByRole('button', { name: 'Add Image to the end of the email' }).click();
   await page.getByRole('button', { name: 'Add Hero banner to the end of the email' }).click();
   await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
   assert((await blocks.count()) === 3, 'three blocks added with the Add buttons');
@@ -75,20 +75,20 @@ try {
     console.log('DEBUG count after second drag:', await blocks.count());
     await shot(page, 'm2-debug.png');
   }
-  await page.waitForFunction(() => document.querySelectorAll('.canvas-block').length === 5);
+  await page.waitForFunction(() => document.querySelectorAll('.canvas-block:not(.brand-block)').length === 5);
   assert((await blocks.nth(1).getAttribute('data-block-type')) === 'divider', 'dropping on a block inserts before it');
   ok('blocks can be added with buttons and by drag and drop');
 
   // ---- reorder (drag and buttons), duplicate, delete, undo, redo
   const order = async () => (await blocks.evaluateAll((els) => els.map((e) => e.getAttribute('data-block-type')))).join(',');
-  assert((await order()) === 'header,divider,hero,text,button', `initial order (${await order()})`);
+  assert((await order()) === 'image,divider,hero,text,button', `initial order (${await order()})`);
   await blocks.nth(4).click(); // selecting a block reveals its toolbar and drag handle
   await drag(page, blocks.nth(4).getByRole('button', { name: /^Drag .* to reorder$/ }), blocks.nth(0));
-  await page.waitForFunction(() => document.querySelector('.canvas-block')?.getAttribute('data-block-type') === 'button');
-  assert((await order()) === 'button,header,divider,hero,text', `after drag reorder (${await order()})`);
+  await page.waitForFunction(() => document.querySelector('.canvas-block:not(.brand-block)')?.getAttribute('data-block-type') === 'button');
+  assert((await order()) === 'button,image,divider,hero,text', `after drag reorder (${await order()})`);
   await blocks.nth(0).click();
   await blocks.nth(0).getByRole('button', { name: 'Move down' }).click();
-  assert((await order()) === 'header,button,divider,hero,text', `after Move down (${await order()})`);
+  assert((await order()) === 'image,button,divider,hero,text', `after Move down (${await order()})`);
   ok('blocks can be reordered by dragging and with the arrow buttons');
 
   await blocks.nth(1).click();
@@ -103,7 +103,7 @@ try {
   await page.getByRole('button', { name: 'Redo' }).click();
   assert((await blocks.count()) === 6, 'redo re-applies it');
   await page.getByRole('button', { name: 'Undo' }).click();
-  assert((await order()) === 'header,button,divider,hero,text', 'order restored after undo');
+  assert((await order()) === 'image,button,divider,hero,text', 'order restored after undo');
   ok('duplicate, delete, undo and redo work');
 
   // ---- edit the hero's text and colors with the controls
@@ -140,7 +140,7 @@ try {
   // ---- close and reopen: edits are restored
   await page.reload();
   await blocks.first().waitFor();
-  assert((await order()) === 'header,button,divider,hero,text', 'order survives a reload');
+  assert((await order()) === 'image,button,divider,hero,text', 'order survives a reload');
   assert((await blocks.nth(3).innerText()).includes('Summer fares from AED 999'), 'edited text survives a reload');
   await blocks.nth(3).click();
   assert((await page.getByLabel('Space above and below text', { exact: true }).inputValue()) === '64', 'edited spacing survives a reload');
@@ -201,7 +201,7 @@ try {
   await page.getByRole('row', { name: /E2E summer sale/ }).getByRole('button', { name: 'Duplicate' }).click();
   await blocks.first().waitFor();
   assert((await page.getByLabel('Campaign name').inputValue()) === 'Copy of E2E summer sale', 'copy is named');
-  assert((await order()) === 'header,button,divider,hero,text', 'copy has the same blocks');
+  assert((await order()) === 'image,button,divider,hero,text', 'copy has the same blocks');
   await blocks.nth(3).click();
   await page.getByLabel('Headline', { exact: true }).fill('Changed only in the copy');
   await saved();

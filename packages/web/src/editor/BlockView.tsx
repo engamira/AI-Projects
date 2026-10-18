@@ -1,12 +1,13 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { paletteOf, type BlockInstance, type EmailSettings, type Palette, type Props } from '@cl/shared';
+import { pictureSrc } from '../api';
 
 // An approximate on-screen view of each block while editing. The Preview tab shows the real generated email.
 // Colors always come from the campaign's template palette: blocks have no color settings.
 
 const s = (p: Props, k: string) => String(p[k] ?? '');
 const n = (p: Props, k: string) => Number(p[k] ?? 0);
-const isImg = (u: string) => /^https:\/\//i.test(u);
+const isImg = (u: string) => /^(https:\/\/|asset:)/i.test(u);
 const al = (p: Props, k = 'align'): CSSProperties['textAlign'] => (s(p, k) as CSSProperties['textAlign']) || 'left';
 const lines = (v: string) => <span style={{ whiteSpace: 'pre-wrap' }}>{v}</span>;
 
@@ -14,7 +15,7 @@ function Img({ c, src, alt, width, style }: { c: Palette; src: string; alt?: str
   if (!isImg(src)) {
     return <div style={{ background: c.placeholder, color: c.muted, fontSize: 14, textAlign: 'center', padding: '32px 12px', ...style }}>Image placeholder: add a picture</div>;
   }
-  return <img src={src} alt={alt ?? ''} style={{ display: 'block', maxWidth: '100%', width, height: 'auto', margin: '0 auto', ...style }} />;
+  return <img src={pictureSrc(src)} alt={alt ?? ''} style={{ display: 'block', maxWidth: '100%', width, height: 'auto', margin: '0 auto', ...style }} />;
 }
 
 function Btn({ label, bg, color, radius = 6, full = false }: { label: string; bg: string; color: string; radius?: number; full?: boolean }) {
@@ -32,11 +33,11 @@ function Wrap({ bg, py, px = 24, align, children }: { bg: string; py: number; px
 export function BlockView({ block, settings }: { block: BlockInstance; settings: EmailSettings }) {
   const p = block.props;
   const c = paletteOf(settings.palette);
-  switch (block.type) {
+  switch (block.type as string) {
     case 'header':
       return (
         <Wrap bg={c.surface} py={n(p, 'paddingY')} align={al(p)}>
-          {isImg(s(p, 'logoUrl')) ? <img src={s(p, 'logoUrl')} alt={s(p, 'logoAlt')} width={n(p, 'logoWidth')} style={{ maxWidth: '100%', height: 'auto' }} /> : <strong style={{ fontSize: 24, color: c.text }}>{s(p, 'brandName')}</strong>}
+          {isImg(s(p, 'logoUrl')) ? <img src={pictureSrc(s(p, 'logoUrl'))} alt={s(p, 'logoAlt')} width={n(p, 'logoWidth')} style={{ maxWidth: '100%', height: 'auto' }} /> : <strong style={{ fontSize: 24, color: c.text }}>{s(p, 'brandName')}</strong>}
         </Wrap>
       );
     case 'hero':
@@ -102,6 +103,16 @@ export function BlockView({ block, settings }: { block: BlockInstance; settings:
       return (
         <Wrap bg={c.footerBg} py={n(p, 'paddingY')} align={al(p)}>
           <div style={{ color: c.footerText, fontSize: 13, lineHeight: 1.6 }}>
+            {['facebook', 'instagram', 'x', 'linkedin', 'youtube'].some((k) => s(p, k)) && (
+              <>
+                {['facebook', 'instagram', 'x', 'linkedin', 'youtube'].filter((k) => s(p, k)).map((k, i) => (
+                  <span key={k} style={{ color: c.footerLink, textDecoration: 'underline' }}>
+                    {i > 0 && ' · '}{({ x: 'X', linkedin: 'LinkedIn', youtube: 'YouTube' } as Record<string, string>)[k] ?? k[0]!.toUpperCase() + k.slice(1)}
+                  </span>
+                ))}
+                <br />
+              </>
+            )}
             <strong>{s(p, 'companyName')}</strong><br />{s(p, 'address')}<br />{lines(s(p, 'notice'))}<br />
             <span style={{ color: c.footerLink, textDecoration: 'underline' }}>{s(p, 'unsubscribeText')}</span>
           </div>
