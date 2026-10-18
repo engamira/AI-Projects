@@ -3,7 +3,9 @@ import { z } from 'zod';
 import {
   canonicalJson,
   cloneContent,
+  PALETTE_IDS,
   emptyContent,
+  normalizeContent,
   validateContent,
   type CampaignDto,
   type CampaignSummary,
@@ -41,6 +43,7 @@ const toDto = (r: CampaignRow): CampaignDto => ({
 const idParam = z.object({ id: z.string().uuid() });
 const revParams = z.object({ id: z.string().uuid(), rid: z.string().uuid() });
 const nameBody = z.object({ name: z.string().trim().min(1, 'Enter a name.').max(120, 'Name is too long.') });
+const createBody = nameBody.extend({ palette: z.enum(PALETTE_IDS).default('travel') });
 const labelBody = z.object({ label: z.string().trim().max(120).optional() });
 const draftBody = z.object({ content: z.unknown(), baseVersion: z.number().int().min(1) });
 
@@ -53,7 +56,8 @@ export function campaignRoutes(app: FastifyInstance, db: Db): void {
         WHERE id = $1 AND workspace_id = $2 ${lock ? 'FOR UPDATE' : ''}`,
       [id, DEFAULT_WORKSPACE_ID],
     );
-    return r.rows[0];
+    const row = r.rows[0];
+    return row && { ...row, draft_content: normalizeContent(row.draft_content) };
   }
 
   async function addRevision(
@@ -108,11 +112,11 @@ export function campaignRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post('/api/campaigns', { config: { access: 'campaign.edit' } }, async (req, reply) => {
-    const { name } = nameBody.parse(req.body);
+    const { name, palette } = createBody.parse(req.body);
     const userId = req.auth!.user.id;
     const row = await withTransaction(db, async (q) => {
-      const c = await createCampaign(q, userId, name, emptyContent(), 'created');
-      await logActivity(q, { actorId: userId, action: 'campaign.created', entityType: 'campaign', entityId: c.id, details: { name } });
+      const c = await createCampaign(q, userId, name, emptyContent(palette), 'created');
+      await logActivity(q, { actorId: userId, action: 'campaign.created', entityType: 'campaign', entityId: c.id, details: { name, palette } });
       return c;
     });
     return reply.status(201).send(toDto(row));
@@ -148,6 +152,9 @@ export function campaignRoutes(app: FastifyInstance, db: Db): void {
     const current = await getCampaign(db, id);
     if (!current) return notFound(reply);
     if (current.status !== 'draft') return reply.status(409).send({ error: 'locked', message: 'This campaign can no longer be edited.' });
+    if (v.content.settings.palette !== current.draft_content.settings.palette) {
+      return reply.status(400).send({ error: 'palette_locked', message: 'The template colors are fixed when a campaign is created and cannot be changed.' });
+    }
     if (current.draft_hash === hash) {
       const same: SaveDraftResponse = { version: current.draft_version, hash, updatedAt: current.updated_at.toISOString() };
       return same; // nothing changed
@@ -232,7 +239,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db): void {
         [rid, id],
       );
       if (!rev.rows[0]) return 'missing' as const;
-      const content = rev.rows[0].content;
+      const content = normalizeContent(rev.rows[0].content);
       await q.query(
         `UPDATE campaign SET draft_content = $2, draft_hash = $3, draft_version = draft_version + 1, updated_by = $4, updated_at = now() WHERE id = $1`,
         [id, JSON.stringify(content), hashOf(content), userId],
@@ -256,7 +263,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db): void {
     if (rid) {
       const r = await db.query<{ content: EmailContent }>('SELECT content FROM campaign_revision WHERE id = $1 AND campaign_id = $2', [rid, id]);
       if (!r.rows[0]) return notFound(reply);
-      content = r.rows[0].content;
+      content = normalizeContent(r.rows[0].content);
     }
     return renderEmail(content);
   });

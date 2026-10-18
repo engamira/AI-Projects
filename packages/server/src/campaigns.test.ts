@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BLOCK_DEFINITIONS, BLOCK_TYPES, canonicalJson, createInstance, blockDefinition, emptyContent, validateContent, type EmailContent } from '@cl/shared';
+import { BLOCK_DEFINITIONS, BLOCK_TYPES, PALETTES, PALETTE_IDS, SETTINGS_FIELDS, canonicalJson, createInstance, blockDefinition, defaultSettings, emptyContent, validateContent, type EmailContent, type PaletteId } from '@cl/shared';
 import { buildApp } from './app.js';
 import { syncBlockDefinitions } from './blocklib.js';
 import { sha256 } from './crypto.js';
@@ -17,7 +17,7 @@ afterAll(() => t.close());
 const libraryHash = async () =>
   sha256(JSON.stringify((await t.db.query('SELECT type, version, definition FROM block_definition ORDER BY type, version')).rows));
 
-const newCampaign = async (name = 'Spring sale', client: Client = builder) => (await client.post('/api/campaigns', { name })).body;
+const newCampaign = async (name = 'Spring sale', client: Client = builder, palette?: PaletteId) => (await client.post('/api/campaigns', { name, palette })).body;
 const block = (type: (typeof BLOCK_TYPES)[number]) => createInstance(blockDefinition(type)!);
 
 describe('block library', () => {
@@ -116,7 +116,7 @@ describe('saving and reopening', () => {
     const content: EmailContent = { ...emptyContent(), blocks: [hero, text] };
     content.settings.subject = 'Big news';
     content.blocks[0]!.props.headline = 'Edited in email A only';
-    content.blocks[0]!.props.bgColor = '#ff0000';
+    content.blocks[0]!.props.paddingY = 72;
     content.blocks[1]!.props.paddingY = 48;
 
     const saved = await builder.put(`/api/campaigns/${a.id}/draft`, { content, baseVersion: a.draft.version });
@@ -183,7 +183,7 @@ describe('saving and reopening', () => {
     expect(js.body.message).toContain('Link');
     expect((await put(withProp('image', 'src', 'http://insecure.example/x.png'))).status).toBe(400);
     expect((await put(withProp('image', 'src', 'data:image/png;base64,AAAA'))).status).toBe(400);
-    expect((await put(withProp('text', 'bgColor', 'red; background:url(x)'))).status).toBe(400);
+    expect((await put(withProp('text', 'fontSize', 400))).status).toBe(400);
     expect((await put(withProp('spacer', 'height', 99999))).status).toBe(400);
     expect((await put(withProp('text', 'body', 'x'.repeat(5000)))).status).toBe(400);
     expect((await put({ ...emptyContent(), blocks: [{ id: crypto.randomUUID(), type: 'script', sourceVersion: 1, props: {} }] })).status).toBe(400);
@@ -208,6 +208,119 @@ describe('saving and reopening', () => {
       const res = await builder.put(`/api/campaigns/${c.id}/draft`, { content: { ...emptyContent(), blocks: [b] }, baseVersion: (await builder.get(`/api/campaigns/${c.id}`)).body.draft.version });
       expect(res.status, url).toBe(200);
     }
+  });
+});
+
+describe('template colors are locked', () => {
+  const lum = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+
+  it('no block and no email setting has a color field or color property', () => {
+    for (const def of BLOCK_DEFINITIONS) {
+      expect(def.fields.map((f) => f.kind as string)).not.toContain('color');
+      for (const key of [...def.fields.map((f) => f.key), ...Object.keys(def.defaults)]) {
+        expect(key, `${def.type}.${key}`).not.toMatch(/color|bgcolor|containerbg|background/i);
+      }
+    }
+    expect(SETTINGS_FIELDS.map((f) => f.kind as string)).not.toContain('color');
+    expect(Object.keys(emptyContent().settings)).not.toEqual(expect.arrayContaining(['backgroundColor']));
+  });
+
+  it('every palette has readable text on every background it is used on (WCAG AA, 4.5:1)', () => {
+    for (const id of PALETTE_IDS) {
+      const p = PALETTES[id];
+      const pairs: [string, string, string][] = [
+        ['text on page surface', p.text, p.surface], ['muted text', p.muted, p.surface], ['links', p.link, p.surface],
+        ['text on primary band', p.onPrimary, p.primary], ['hero button text', p.onHeroButton, p.heroButton],
+        ['text on dark band', p.onDark, p.dark], ['text on secondary band', p.onSecondary, p.secondary],
+        ['text on accent strip', p.onAccent, p.accent], ['button text', p.onButton, p.button],
+        ['footer text', p.footerText, p.footerBg], ['footer links', p.footerLink, p.footerBg],
+      ];
+      for (const [what, fg, bg] of pairs) expect(contrast(fg, bg), `${id}: ${what} ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('a hero button stays visible against the hero band in every palette', () => {
+    for (const id of PALETTE_IDS) expect(contrast(PALETTES[id].heroButton, PALETTES[id].primary), id).toBeGreaterThanOrEqual(3);
+  });
+
+  it('the email takes its colors from the template, never from block properties', async () => {
+    const colorsIn = async (palette: 'travel' | 'events' | 'cosmetics') => {
+      const content: EmailContent = { ...emptyContent(palette), blocks: BLOCK_TYPES.map(block) };
+      return (await renderEmail(content)).html.toLowerCase();
+    };
+    const travel = await colorsIn('travel');
+    expect(travel).toContain('#fa8739'); // hero band and buttons
+    expect(travel).toContain('#2f323b'); // charcoal footer and hero button
+    expect(travel).toContain('#e4e9ef'); // page background
+    const events = await colorsIn('events');
+    expect(events).toContain('#354552');
+    expect(events).toContain('#f4f4f4');
+    expect(events).not.toContain('#fa8739');
+    const cosmetics = await colorsIn('cosmetics');
+    expect(cosmetics).toContain('#ff3fb4');
+    expect(cosmetics).toContain('#d6247f'); // accessible pink for buttons
+    expect(cosmetics).not.toContain('#fa8739');
+  });
+
+  it('old color properties in saved emails are ignored by the renderer and dropped when saved', async () => {
+    const legacy = block('text');
+    (legacy.props as Record<string, unknown>).bgColor = '#123456';
+    (legacy.props as Record<string, unknown>).textColor = '#654321';
+    const content = { ...emptyContent('events'), blocks: [legacy] } as EmailContent;
+    const html = (await renderEmail(content)).html.toLowerCase();
+    expect(html).not.toContain('#123456');
+    expect(html).not.toContain('#654321');
+
+    const c = await newCampaign('Legacy colors', builder, 'events');
+    const saved = await builder.put(`/api/campaigns/${c.id}/draft`, { content, baseVersion: 1 });
+    expect(saved.status).toBe(200);
+    const reopened = (await builder.get(`/api/campaigns/${c.id}`)).body.draft.content;
+    expect(reopened.blocks[0].props.bgColor).toBeUndefined();
+    expect(reopened.blocks[0].props.textColor).toBeUndefined();
+  });
+
+  it('emails saved before palettes existed open as Travel', () => {
+    const old = { schemaVersion: 1, settings: { ...defaultSettings(), backgroundColor: '#f2f2f2', contentBackground: '#ffffff' }, blocks: [] } as Record<string, unknown>;
+    delete (old.settings as Record<string, unknown>).palette;
+    const v = validateContent(old);
+    expect(v.ok, !v.ok ? v.error : '').toBe(true);
+    if (v.ok) {
+      expect(v.content.settings.palette).toBe('travel');
+      expect(v.content.settings).not.toHaveProperty('backgroundColor');
+    }
+  });
+
+  it('the template colors are chosen when creating a campaign and can never change afterwards', async () => {
+    const events = await newCampaign('Events one', builder, 'events');
+    expect(events.draft.content.settings.palette).toBe('events');
+    expect((await newCampaign('Default')).draft.content.settings.palette).toBe('travel');
+    expect((await builder.post('/api/campaigns', { name: 'Bad', palette: 'neon' })).status).toBe(400);
+
+    const switched = { ...events.draft.content, settings: { ...events.draft.content.settings, palette: 'cosmetics' } };
+    const res = await builder.put(`/api/campaigns/${events.id}/draft`, { content: switched, baseVersion: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('palette_locked');
+    expect((await builder.get(`/api/campaigns/${events.id}`)).body.draft.content.settings.palette).toBe('events');
+
+    // copies and restored versions keep the colors
+    const copy = (await builder.post(`/api/campaigns/${events.id}/duplicate`)).body;
+    expect(copy.draft.content.settings.palette).toBe('events');
+    const revs = (await builder.get(`/api/campaigns/${events.id}/revisions`)).body;
+    const restored = (await builder.post(`/api/campaigns/${events.id}/revisions/${revs[0].id}/restore`)).body;
+    expect(restored.draft.content.settings.palette).toBe('events');
+  });
+
+  it('an unknown palette is rejected when saving', async () => {
+    const c = await newCampaign('Unknown palette');
+    const bad = { ...emptyContent(), settings: { ...emptyContent().settings, palette: 'neon' } };
+    expect((await builder.put(`/api/campaigns/${c.id}/draft`, { content: bad, baseVersion: 1 })).status).toBe(400);
   });
 });
 

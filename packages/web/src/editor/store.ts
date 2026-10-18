@@ -46,7 +46,7 @@ type EditorState = {
 
 const emptyDoc = (): EmailContent => ({
   schemaVersion: 1,
-  settings: { subject: '', preheader: '', senderName: '', senderEmail: '', replyTo: '', backgroundColor: '#f2f2f2', contentBackground: '#ffffff', contentWidth: 600, fontFamily: 'Arial, Helvetica, sans-serif' },
+  settings: { subject: '', preheader: '', senderName: '', senderEmail: '', replyTo: '', palette: 'travel', contentWidth: 600, fontFamily: 'Arial, Helvetica, sans-serif' },
   blocks: [],
 });
 

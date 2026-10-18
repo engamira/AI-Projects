@@ -113,6 +113,7 @@ export type ActivityDto = {
 
 // ---------- Campaigns and block library ----------
 export * from './blocks.js';
+export * from './palettes.js';
 export * from './content.js';
 
 import type { BlockDefinition } from './blocks.js';

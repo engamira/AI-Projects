@@ -29,14 +29,6 @@ function FieldInput({ field, value, onChange }: { field: FieldDef; value: PropVa
           </label>
         </div>
       );
-    case 'color':
-      control = (
-        <div className="color-row">
-          <input type="color" aria-label={`${field.label} picker`} value={/^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : '#000000'} onChange={(e) => onChange(e.target.value)} />
-          <input {...common} type="text" value={String(value)} maxLength={7} onChange={(e) => onChange(e.target.value)} />
-        </div>
-      );
-      break;
     case 'number':
       control = (
         <div className="num-row">

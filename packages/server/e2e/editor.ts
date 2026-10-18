@@ -54,6 +54,8 @@ try {
   // ---- create a campaign
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('E2E summer sale');
+  assert((await page.getByLabel('Template colors').inputValue()) === 'travel', 'Travel colors are the default choice');
+  assert((await page.getByLabel('Template colors').locator('option').allInnerTexts()).join() === 'Travel,Events,Cosmetics', 'three template color sets to choose from');
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('region', { name: 'Email canvas' }).waitFor();
   assert((await blocks.count()) === 0, 'new campaign starts empty');
@@ -107,8 +109,17 @@ try {
   // ---- edit the hero's text and colors with the controls
   await blocks.nth(3).click();
   await page.getByLabel('Headline', { exact: true }).fill('Summer fares from AED 999');
-  await page.getByLabel('Background color', { exact: true }).fill('#0a3d62');
+  await page.getByLabel('Space above and below text', { exact: true }).fill('64');
   assert((await blocks.nth(3).innerText()).includes('Summer fares from AED 999'), 'canvas shows the edited headline');
+  // colors are locked to the template: no color control anywhere, and the hero uses the Travel palette
+  assert((await page.locator('input[type="color"]').count()) === 0, 'no color picker in the properties panel');
+  assert((await page.getByText(/color/i).filter({ has: page.locator('input') }).count()) === 0, 'no color field labels');
+  const heroBg = await blocks.nth(3).locator('.block-body > div').first().evaluate((e) => getComputedStyle(e).backgroundColor);
+  assert(heroBg === 'rgb(250, 135, 57)', `hero uses the Travel template color (got ${heroBg})`);
+  const heroBtn = await blocks.nth(3).locator('.block-body span').filter({ hasText: 'Learn more' }).evaluate((e) => getComputedStyle(e).backgroundColor);
+  assert(heroBtn === 'rgb(47, 50, 59)', `hero button uses the template button color (got ${heroBtn})`);
+  const ctaBtn = await blocks.nth(1).locator('.block-body span').first().evaluate((e) => getComputedStyle(e).backgroundColor);
+  assert(ctaBtn === 'rgb(250, 135, 57)', `button block uses the template button color (got ${ctaBtn})`);
   await page.locator('.canvas-page').click({ position: { x: 4, y: 4 } }); // click outside the email: shows Email settings
   await page.getByLabel('Subject line').fill('Summer fares are here');
   await shot(page, 'm2-1-editor.png');
@@ -132,17 +143,23 @@ try {
   assert((await order()) === 'header,button,divider,hero,text', 'order survives a reload');
   assert((await blocks.nth(3).innerText()).includes('Summer fares from AED 999'), 'edited text survives a reload');
   await blocks.nth(3).click();
-  assert((await page.getByLabel('Background color', { exact: true }).inputValue()) === '#0a3d62', 'edited color survives a reload');
+  assert((await page.getByLabel('Space above and below text', { exact: true }).inputValue()) === '64', 'edited spacing survives a reload');
   assert((await page.getByLabel('Button link alias', { exact: true }).inputValue()) === 'Summer hero button', 'link alias survives a reload');
   ok('reopening the email restores every edit');
 
   // ---- library originals and other emails are unchanged
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('Second email');
+  await page.getByLabel('Template colors').selectOption('events');
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('region', { name: 'Email canvas' }).waitFor();
   await page.getByRole('button', { name: 'Add Hero banner to the end of the email' }).click();
   assert((await blocks.nth(0).innerText()).includes('A big, clear headline'), 'a new hero starts from the original defaults');
+  const eventsHero = await blocks.nth(0).locator('.block-body > div').first().evaluate((e) => getComputedStyle(e).backgroundColor);
+  assert(eventsHero === 'rgb(53, 69, 82)', `an Events email uses the Events colors (got ${eventsHero})`);
+  await page.locator('.canvas-page').click({ position: { x: 4, y: 4 } });
+  await page.getByText('Template colors: Events').waitFor();
+  assert((await page.getByLabel('Template colors').count()) === 0, 'the template colors cannot be changed inside an email');
   ok('editing one email never changes the library original or another email');
 
   // ---- preview with selectable widths

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { BLOCK_TYPES, blockDefinition, type BlockDefinition, type BlockType, type FieldDef, type Props } from './blocks.js';
+import { BLOCK_TYPES, LEGACY_COLOR_PROPS, blockDefinition, type BlockDefinition, type BlockType, type FieldDef, type Props } from './blocks.js';
+import { PALETTE_IDS, type PaletteId } from './palettes.js';
 
 // ---------- Email content: what is stored for every campaign draft and revision ----------
 
@@ -16,8 +17,8 @@ export type EmailSettings = {
   senderName: string;
   senderEmail: string;
   replyTo: string;
-  backgroundColor: string;
-  contentBackground: string;
+  /** Template colors. Chosen when the campaign is created and locked afterwards. */
+  palette: PaletteId;
   contentWidth: number;
   fontFamily: string;
 };
@@ -46,25 +47,44 @@ export const SETTINGS_FIELDS: FieldDef[] = [
   { key: 'senderName', label: 'Sender name', kind: 'text', group: 'content', max: 100 },
   { key: 'senderEmail', label: 'Sender email', kind: 'text', group: 'content', max: 254 },
   { key: 'replyTo', label: 'Reply-to email', kind: 'text', group: 'content', max: 254 },
-  { key: 'backgroundColor', label: 'Page background', kind: 'color', group: 'style' },
-  { key: 'contentBackground', label: 'Email background', kind: 'color', group: 'style' },
   { key: 'contentWidth', label: 'Email width', kind: 'number', group: 'style', min: 480, max: 700, unit: 'px' },
   { key: 'fontFamily', label: 'Font', kind: 'select', group: 'style', options: FONT_OPTIONS },
 ];
 
-export const defaultSettings = (): EmailSettings => ({
+export const defaultSettings = (palette: PaletteId = 'travel'): EmailSettings => ({
   subject: '',
   preheader: '',
   senderName: '',
   senderEmail: '',
   replyTo: '',
-  backgroundColor: '#f2f2f2',
-  contentBackground: '#ffffff',
+  palette,
   contentWidth: 600,
   fontFamily: FONT_OPTIONS[0]!.value,
 });
 
-export const emptyContent = (): EmailContent => ({ schemaVersion: 1, settings: defaultSettings(), blocks: [] });
+export const emptyContent = (palette: PaletteId = 'travel'): EmailContent => ({ schemaVersion: 1, settings: defaultSettings(palette), blocks: [] });
+
+/**
+ * Cleans content saved by earlier versions so it matches the current rules: color properties are
+ * dropped (colors now come from the template palette) and a missing palette defaults to Travel.
+ * Always run before validating or rendering stored content.
+ */
+export function normalizeContent<T>(input: T): T {
+  if (!input || typeof input !== 'object') return input;
+  const c = JSON.parse(JSON.stringify(input)) as { settings?: Record<string, unknown>; blocks?: { type?: string; props?: Record<string, unknown> }[] };
+  if (c.settings && typeof c.settings === 'object') {
+    delete c.settings.backgroundColor;
+    delete c.settings.contentBackground;
+    if (!c.settings.palette) c.settings.palette = 'travel';
+  }
+  if (Array.isArray(c.blocks)) {
+    for (const b of c.blocks) {
+      const legacy = b && typeof b.type === 'string' ? LEGACY_COLOR_PROPS[b.type] : undefined;
+      if (legacy && b.props && typeof b.props === 'object') for (const k of legacy) delete b.props[k];
+    }
+  }
+  return c as T;
+}
 
 /** Dropping a block creates an independent copy: nothing is shared with the library definition. */
 export function createInstance(def: BlockDefinition): BlockInstance {
@@ -89,7 +109,6 @@ export function cloneContent(c: EmailContent, newIds = false): EmailContent {
 
 // ---------- Validation ----------
 
-const HEX = /^#[0-9a-fA-F]{6}$/;
 const URL_OK = /^(https?:\/\/[^\s<>"'`\\]+|mailto:[^\s<>"'`\\]+|tel:[+0-9() -]+)$/i;
 const HTTPS_OK = /^https:\/\/[^\s<>"'`\\]+$/i;
 export const PLACEHOLDER = /^\{\{\s*[a-z_][a-z0-9_]*\s*\}\}$/;
@@ -108,8 +127,6 @@ export function checkField(f: FieldDef, v: unknown): string | null {
       if (f.min !== undefined && v < f.min) return bad(`must be at least ${f.min}`);
       if (f.max !== undefined && v > f.max) return bad(`must be at most ${f.max}`);
       return null;
-    case 'color':
-      return typeof v === 'string' && HEX.test(v) ? null : bad('must be a color like #1c2430');
     case 'select':
       return typeof v === 'string' && f.options!.some((o) => o.value === v) ? null : bad('is not an allowed choice');
     default: {
@@ -150,11 +167,15 @@ export type ValidationResult = { ok: true; content: EmailContent } | { ok: false
 
 /** Full structural and value validation. The server runs this on every save; nothing unvalidated is stored or rendered. */
 export function validateContent(input: unknown): ValidationResult {
-  const parsed = envelope.safeParse(input);
+  const parsed = envelope.safeParse(normalizeContent(input));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid email content.' };
   const c = parsed.data;
 
-  const settingsErr = checkFields(SETTINGS_FIELDS, c.settings, 'Email settings');
+  const { palette, ...otherSettings } = c.settings;
+  if (typeof palette !== 'string' || !(PALETTE_IDS as readonly string[]).includes(palette)) {
+    return { ok: false, error: 'Email settings: unknown template colors' };
+  }
+  const settingsErr = checkFields(SETTINGS_FIELDS, otherSettings, 'Email settings');
   if (settingsErr) return { ok: false, error: settingsErr };
 
   const seen = new Set<string>();

@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   SETTINGS_FIELDS,
   blockDefinition,
+  paletteOf,
   type BlockDefinition,
   type BlockInstance,
   type CampaignDto,
@@ -96,10 +97,11 @@ function Canvas({ canEdit }: { canEdit: boolean }) {
   const { content, select } = useEditor();
   const { setNodeRef, isOver } = useDroppable({ id: 'canvas-end' });
   const st = content.settings;
+  const pal = paletteOf(st.palette);
   return (
     <div className="canvas-scroll" onClick={() => select(null)}>
-      <div className="canvas-page" style={{ background: st.backgroundColor, padding: 16 }}>
-        <div style={{ maxWidth: st.contentWidth, margin: '0 auto', background: st.contentBackground, fontFamily: st.fontFamily }} data-testid="canvas">
+      <div className="canvas-page" style={{ background: pal.page, padding: 16 }}>
+        <div style={{ maxWidth: st.contentWidth, margin: '0 auto', background: pal.surface, fontFamily: st.fontFamily }} data-testid="canvas">
           <SortableContext items={content.blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
             {content.blocks.map((b, i) => <SortableBlock key={b.id} block={b} index={i} total={content.blocks.length} canEdit={canEdit} />)}
           </SortableContext>
@@ -130,6 +132,12 @@ function Properties({ canEdit }: { canEdit: boolean }) {
     <>
       <h2>Email settings</h2>
       <p className="muted small">Select a block to edit it.</p>
+      <p className="palette-note" data-testid="palette-note">
+        <span className="swatches" aria-hidden="true">
+          {[paletteOf(content.settings.palette).primary, paletteOf(content.settings.palette).dark, paletteOf(content.settings.palette).accent].map((c, i) => <i key={i} style={{ background: c }} />)}
+        </span>
+        Template colors: <strong>{paletteOf(content.settings.palette).label}</strong> (fixed for this email)
+      </p>
       <FieldForm
         fields={SETTINGS_FIELDS}
         values={content.settings as unknown as Record<string, PropValue>}
