@@ -390,7 +390,7 @@ describe('who can do what', () => {
       expect((await other.get(`/api/campaigns/${c.id}/preview`)).status).toBe(200);
       expect((await other.get('/api/library/blocks')).status).toBe(200);
       expect((await other.post('/api/campaigns', { name: 'Nope' })).status).toBe(403);
-      expect((await other.put(`/api/campaigns/${c.id}/draft`, { content: emptyContent(), baseVersion: 1 })).status).toBe(403);
+      expect((await other.put(`/api/campaigns/${c.id}/draft`, { content: { ...emptyContent(), blocks: [createInstance(blockDefinition('text')!)] }, baseVersion: 1 })).status).toBe(403);
       expect((await other.post(`/api/campaigns/${c.id}/duplicate`)).status).toBe(403);
       expect((await other.post(`/api/campaigns/${c.id}/revisions`, {})).status).toBe(403);
     }

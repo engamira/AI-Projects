@@ -119,6 +119,17 @@ export function BlockView({ block, settings }: { block: BlockInstance; settings:
           </div>
         </Wrap>
       );
+    case 'custom_html':
+      // The editor never renders typed HTML; the real (cleaned) result is shown in the Preview tab.
+      return (
+        <Wrap bg={c.surface} py={n(p, 'paddingY')} px={n(p, 'paddingX')} align="left">
+          <div style={{ border: '1px dashed currentColor', borderRadius: 6, padding: 12, color: c.text, fontSize: 14 }}>
+            <strong>Custom HTML{s(p, 'label') ? `: ${s(p, 'label')}` : ''}</strong>
+            <div style={{ opacity: 0.75, marginTop: 4 }}>{s(p, 'html').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) || '(empty)'}</div>
+            <div style={{ opacity: 0.6, marginTop: 4, fontSize: 12 }}>See the Preview tab for how it looks after cleaning.</div>
+          </div>
+        </Wrap>
+      );
     default:
       return <SpecialtyView type={block.type as string} p={p} c={c} />;
   }

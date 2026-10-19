@@ -19,6 +19,7 @@ export const SHARED_BLOCK_TYPES = [
   'divider',
   'spacer',
   'social',
+  'custom_html',
 ] as const;
 export const BLOCK_TYPES = [...SHARED_BLOCK_TYPES, ...SPECIALTY_TYPES] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
@@ -175,6 +176,19 @@ const ALL_DEFINITIONS: RawDefinition[] = [
       num('paddingY', 'Space above and below', 0, 80),
     ],
     defaults: { facebook: '', facebookAlias: 'Social - Facebook', instagram: '', instagramAlias: 'Social - Instagram', x: '', xAlias: 'Social - X', linkedin: '', linkedinAlias: 'Social - LinkedIn', youtube: '', youtubeAlias: 'Social - YouTube', align: 'center', paddingY: 16 } },
+  {
+    type: 'custom_html',
+    version: 1,
+    label: 'Custom HTML',
+    description: 'Admin only. Your own HTML for one-off needs. It is cleaned before use: scripts, forms, frames and unsafe links are removed.',
+    category: 'shared',
+    fields: [
+      text('label', 'Name for this block', 'content', 'Only shown to the team, never in the email.'),
+      area('html', 'HTML', 20000),
+      num('paddingY', 'Space above and below', 0, 80),
+      num('paddingX', 'Space left and right', 0, 80),
+    ],
+    defaults: { label: 'Custom HTML', html: '<p>Your HTML here.</p>', paddingY: 16, paddingX: 24 } },
   {
     type: 'footer',
     version: 3,

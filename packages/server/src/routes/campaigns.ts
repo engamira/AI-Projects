@@ -19,6 +19,7 @@ import {
   type SaveDraftResponse,
 } from '@cl/shared';
 import { missingAssets } from '../assets.js';
+import { roleEditRefusal } from '../editrules.js';
 import { listLibrary } from '../blocklib.js';
 import { latestProfile } from '../brand.js';
 import type { AppConfig } from '../config.js';
@@ -148,7 +149,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
   });
 
   // Autosave target. Uses optimistic concurrency: a stale tab cannot overwrite newer work.
-  app.put<{ Params: { id: string } }>('/api/campaigns/:id/draft', { config: { access: 'campaign.edit' } }, async (req, reply) => {
+  app.put<{ Params: { id: string } }>('/api/campaigns/:id/draft', { config: { access: ['campaign.edit', 'html.custom'] } }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const body = draftBody.parse(req.body);
     const v = validateContent(body.content);
@@ -163,6 +164,8 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     if (v.content.settings.palette !== current.draft_content.settings.palette) {
       return reply.status(400).send({ error: 'palette_locked', message: 'The template colors are fixed when a campaign is created and cannot be changed.' });
     }
+    const refusal = roleEditRefusal(req.auth!.user.role, current.draft_content, v.content);
+    if (refusal) return reply.status(403).send({ error: 'forbidden_edit', message: refusal });
     if (current.draft_hash === hash) {
       const same: SaveDraftResponse = { version: current.draft_version, hash, updatedAt: current.updated_at.toISOString() };
       return same; // nothing changed
@@ -248,6 +251,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       );
       if (!rev.rows[0]) return 'missing' as const;
       const content = normalizeContent(rev.rows[0].content);
+      if (roleEditRefusal(req.auth!.user.role, c.draft_content, content)) return 'html' as const;
       await q.query(
         `UPDATE campaign SET draft_content = $2, draft_hash = $3, draft_version = draft_version + 1, updated_by = $4, updated_at = now() WHERE id = $1`,
         [id, JSON.stringify(content), hashOf(content), userId],
@@ -257,6 +261,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       return 'ok' as const;
     });
     if (result === 'missing') return notFound(reply);
+    if (result === 'html') return reply.status(403).send({ error: 'forbidden_edit', message: 'That version has different Custom HTML blocks. Only an Admin can change those, so ask an Admin to restore it.' });
     if (result === 'locked') return reply.status(409).send({ error: 'locked', message: 'This campaign can no longer be edited.' });
     return toDto((await getCampaign(db, id))!);
   });

@@ -1,4 +1,5 @@
 import mjml2html from 'mjml';
+import { customHtmlWarnings, sanitizeCustomHtml } from './customhtml.js';
 import { ASSET_REF, defaultBrand, findPlaceholderIssues, normalizeContent, paletteOf, personalize, type PlaceholderIssue, type Recipient, type BlockInstance, type EmailContent, type Palette, type Props } from '@cl/shared';
 
 // Turns the stored structured content into email HTML (via MJML).
@@ -92,6 +93,7 @@ const RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
 
   spacer: (p, ctx) => `<mj-section background-color="${ctx.c.surface}" padding="0"><mj-column><mj-spacer height="${n(p, 'height')}px" /></mj-column></mj-section>`,
 
+  custom_html: (p, ctx) => `<mj-section background-color="${ctx.c.surface}" padding="0"><mj-column><mj-text color="${ctx.c.text}" font-size="16px" line-height="1.5" padding="${n(p, 'paddingY')}px ${n(p, 'paddingX')}px">${sanitizeCustomHtml(s(p, 'html'))}</mj-text></mj-column></mj-section>`,
   social: (p, ctx) => {
     const nets: [string, string][] = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['x', 'X'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']];
     const links = nets
@@ -376,5 +378,8 @@ export async function renderEmail(content: EmailContent, opts: RenderOptions & {
     html = personalize(html, opts.recipient, { html: true });
     text = personalize(text, opts.recipient, { html: false });
   }
-  return { html, text, warnings: out.errors.map((e) => e.formattedMessage ?? e.message ?? 'Unknown MJML warning'), placeholderIssues: findPlaceholderIssues(normalizeContent(content)) };
+  return { html, text, warnings: [
+      ...out.errors.map((e) => e.formattedMessage ?? e.message ?? 'Unknown MJML warning'),
+      ...normalizeContent(content).blocks.filter((x) => x.type === 'custom_html').flatMap((x) => customHtmlWarnings(String(x.props.html ?? '')).map((w) => `Custom HTML block "${String(x.props.label ?? '')}": ${w}.`)),
+    ], placeholderIssues: findPlaceholderIssues(normalizeContent(content)) };
 }

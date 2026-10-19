@@ -53,7 +53,9 @@ function useLibrary(): BlockDefinition[] {
 }
 
 // ---------- Library (originals) ----------
-function LibraryItem({ def, canEdit }: { def: BlockDefinition; canEdit: boolean }) {
+function LibraryItem({ def, canEdit: canEditBasic }: { def: BlockDefinition; canEdit: boolean }) {
+  const { can } = useSession();
+  const canEdit = def.type === 'custom_html' ? can('html.custom') : canEditBasic; // Custom HTML is Admin-only; everything else is for Builders
   const addBlock = useEditor((s) => s.addBlock);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `lib:${def.type}`, disabled: !canEdit });
   return (
@@ -69,7 +71,9 @@ function LibraryItem({ def, canEdit }: { def: BlockDefinition; canEdit: boolean 
 }
 
 // ---------- Canvas ----------
-function SortableBlock({ block, index, total, canEdit }: { block: BlockInstance; index: number; total: number; canEdit: boolean }) {
+function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: BlockInstance; index: number; total: number; canEdit: boolean }) {
+  const { can } = useSession();
+  const canEdit = block.type === 'custom_html' ? can('html.custom') : canEditBasic;
   const { content, selectedId, select, moveBlock, duplicateBlock, deleteBlock } = useEditor();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, disabled: !canEdit });
   const def = blockDefinition(block.type);
@@ -140,9 +144,11 @@ function BrandBlock({ kind, profile, settings }: { kind: 'header' | 'footer'; pr
 }
 
 // ---------- Properties ----------
-function Properties({ canEdit }: { canEdit: boolean }) {
+function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
   const { content, selectedId, setProp, setSetting } = useEditor();
+  const { can } = useSession();
   const block = content.blocks.find((b) => b.id === selectedId);
+  const canEdit = block?.type === 'custom_html' ? can('html.custom') : canEditBasic;
   const def = block ? blockDefinition(block.type) : undefined;
   if (block && def) {
     return (
@@ -186,6 +192,9 @@ const DESKTOP_WIDTHS = [
   { w: 1280, label: 'Wide desktop (1280)' },
 ];
 
+// The preview is HTML we generated, shown in a frame with no scripts and a content policy that only allows https pictures and inline styles.
+const PREVIEW_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' https:; font-src https:; form-action 'none'">`;
+
 /** One simulated screen: the generated email at a chosen width. */
 function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop'; html: string; widths: { w: number; label: string }[]; initial: number }) {
   const [width, setWidth] = useState(initial);
@@ -209,7 +218,7 @@ function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop
         )}
         {kind === 'phone' && <div className="frame-notch" aria-hidden="true" />}
         <div className="device-screen">
-          <iframe title={`${name} preview`} sandbox="" srcDoc={html} style={{ width, height: kind === 'phone' ? '70vh' : '74vh', border: 0, background: '#fff', display: 'block' }} />
+          <iframe title={`${name} preview`} sandbox="" srcDoc={html.replace(/<head[^>]*>/i, (m) => m + PREVIEW_CSP)} style={{ width, height: kind === 'phone' ? '70vh' : '74vh', border: 0, background: '#fff', display: 'block' }} />
         </div>
         {kind === 'phone' && <div className="frame-home" aria-hidden="true" />}
       </div>
@@ -351,6 +360,7 @@ export function EditorPage() {
   const { id = '' } = useParams();
   const { can } = useSession();
   const canEdit = can('campaign.edit');
+  const canAny = canEdit || can('html.custom'); // an Admin may only work on Custom HTML blocks
   const lib = useLibrary();
   const s = useEditor();
   const [tab, setTab] = useState<'edit' | 'preview' | 'versions'>('edit');
@@ -367,11 +377,11 @@ export function EditorPage() {
 
   // Autosave 1.2 s after the last change; retry after a failed save.
   useEffect(() => {
-    if (!canEdit || s.campaignId !== id) return;
+    if (!canAny || s.campaignId !== id) return;
     if (s.saveState !== 'dirty' && s.saveState !== 'error') return;
     const t = setTimeout(() => void useEditor.getState().save(), s.saveState === 'error' ? 5000 : 1200);
     return () => clearTimeout(t);
-  }, [s.content, s.saveState, canEdit, s.campaignId, id]);
+  }, [s.content, s.saveState, canAny, s.campaignId, id]);
 
   // Warn before leaving with unsaved changes; keyboard shortcuts for undo/redo.
   useEffect(() => {
@@ -443,10 +453,11 @@ export function EditorPage() {
           onChange={(e) => s.setName(e.target.value)}
           onBlur={() => canEdit && void rename()}
         />
-        {!canEdit && <span className="badge">View only</span>}
+        {!canAny && <span className="badge">View only</span>}
+        {canAny && !canEdit && <span className="badge">Custom HTML only</span>}
         <span className={`save-state ${s.saveState}`} role="status" aria-live="polite">{STATUS[s.saveState]}</span>
         {s.saveState === 'conflict' && <button className="primary" onClick={() => void reload()}>Reload latest</button>}
-        {canEdit && (
+        {canAny && (
           <>
             <button type="button" onClick={s.undo} disabled={s.past.length === 0} aria-label="Undo">↶ Undo</button>
             <button type="button" onClick={s.redo} disabled={s.future.length === 0} aria-label="Redo">↷ Redo</button>
@@ -476,7 +487,7 @@ export function EditorPage() {
                 </>
               )}
             </aside>
-            <section className="panel-center" aria-label="Email canvas"><Canvas canEdit={canEdit} /></section>
+            <section className="panel-center" aria-label="Email canvas"><Canvas canEdit={canAny} /></section>
             <aside className="panel-right" aria-label="Properties"><Properties canEdit={canEdit} /></aside>
           </div>
           <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>

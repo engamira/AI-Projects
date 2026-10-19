@@ -74,7 +74,7 @@ describe('route protection', () => {
     expect(guarded.length).toBeGreaterThan(5);
     for (const r of guarded) {
       for (const role of ROLES) {
-        const allowed = r.access === 'session' || hasCapability(role, r.access as Capability);
+        const allowed = r.access === 'session' || (typeof r.access === 'string' ? [r.access] : ((r.access ?? []) as unknown as readonly Capability[])).some((cap) => hasCapability(role, cap as Capability));
         const res = await sessions.get(role)!.request(r.method as 'GET', fill(r.url), r.method === 'GET' ? undefined : {});
         const label = `${role} ${r.method} ${r.url}`;
         if (allowed) expect([401, 403], label).not.toContain(res.status);
@@ -98,7 +98,7 @@ describe('route protection', () => {
   it('a session that has only passed the password step cannot reach protected routes', async () => {
     const u = await t.seedUser('admin', { totp: true });
     const partial = await t.sessionFor(u, 'password');
-    for (const r of apiRoutes().filter((x) => x.access && !['public', 'partial', 'any_session'].includes(x.access))) {
+    for (const r of apiRoutes().filter((x) => x.access && !(typeof x.access === 'string' && ['public', 'partial', 'any_session'].includes(x.access)))) {
       const res = await partial.request(r.method as 'GET', fill(r.url), r.method === 'GET' ? undefined : {});
       expect(res.status, `${r.method} ${r.url}`).toBe(401);
     }

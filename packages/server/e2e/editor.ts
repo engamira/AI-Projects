@@ -246,12 +246,39 @@ try {
     await other.goto(`${BASE}/`);
     assert((await other.getByLabel('Campaign name').count()) === 0, `${role} sees no "new campaign" form`);
     await other.getByRole('link', { name: 'E2E summer sale', exact: true }).click();
-    await other.getByText('View only').waitFor();
+    await other.getByText(role === 'admin' ? 'Custom HTML only' : 'View only').waitFor();
     assert(await other.getByRole('button', { name: 'Add Hero banner to the end of the email' }).isDisabled(), `${role}: Add buttons are disabled`);
     assert((await other.getByRole('button', { name: 'Delete block' }).count()) === 0, `${role}: no delete buttons`);
-    assert((await other.getByRole('button', { name: 'Undo' }).count()) === 0, `${role}: no undo button`);
+    if (role === 'qa_reviewer') assert((await other.getByRole('button', { name: 'Undo' }).count()) === 0, `${role}: no undo button`);
   }
-  ok('Admin and QA reviewer can open an email read-only');
+  ok('Admin (Custom HTML only) and QA reviewer (view only) cannot change normal blocks');
+
+  // ---- the Admin can add Custom HTML; it is cleaned in the preview, and the Builder cannot edit it
+  {
+    const { page: adm } = await openAs(browser, 'admin');
+    await adm.goto(`${BASE}/`);
+    await adm.getByRole('link', { name: 'E2E summer sale', exact: true }).click();
+    await adm.getByRole('button', { name: 'Add Custom HTML to the end of the email' }).click();
+    const html = adm.getByLabel('HTML', { exact: true });
+    await html.fill('<p>Admin note</p><script>window.__pwned=1</script><p onclick="window.__pwned=1">click</p>');
+    await adm.getByText('All changes saved').waitFor();
+    await adm.getByRole('tab', { name: 'Preview' }).click();
+    await adm.getByText('rendering note').waitFor();
+    const frame = adm.frameLocator('iframe[title="Phone preview"]');
+    await frame.getByText('Admin note').waitFor();
+    assert((await frame.locator('script').count()) === 0, 'no script in the preview');
+    assert((await frame.locator('[onclick]').count()) === 0, 'no event handlers in the preview');
+    await adm.getByRole('button', { name: 'Show plain text' }).click();
+    await adm.getByText('Admin note').first().waitFor();
+
+    const { page: bld } = await openAs(browser, 'builder');
+    await bld.goto(`${BASE}/`);
+    await bld.getByRole('link', { name: 'E2E summer sale', exact: true }).click();
+    await bld.getByText('Custom HTML:').first().click();
+    assert(await bld.getByLabel('HTML', { exact: true }).isDisabled(), 'the Builder cannot edit Custom HTML');
+    assert(await bld.getByRole('button', { name: 'Add Custom HTML to the end of the email' }).isDisabled(), 'the Builder cannot add Custom HTML');
+  }
+  ok('Admin adds Custom HTML, it is cleaned in the preview, and the Builder cannot edit or add it');
 
   // ---- phone-sized screen has no sideways scrolling on the campaign list
   const { page: phone } = await openAs(browser, 'builder', { width: 390, height: 844 });

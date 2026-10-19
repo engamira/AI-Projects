@@ -11,10 +11,10 @@ import { cookieName, loadSession, type AuthContext } from './sessions.js';
  *  - 'partial'      session after the password step only (second factor pending)
  *  - 'any_session'  partial or full session
  *  - 'session'      fully signed-in user (password + second factor)
- *  - a Capability   fully signed-in user whose role grants that capability
+ *  - a Capability   fully signed-in user whose role grants that capability (or a list: any one of them)
  * Routes that declare nothing are refused (deny by default).
  */
-export type Access = 'public' | 'partial' | 'any_session' | 'session' | Capability;
+export type Access = 'public' | 'partial' | 'any_session' | 'session' | Capability | readonly Capability[]; // a list means any one of them
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -73,6 +73,7 @@ export default fp(async function accessPlugin(app: FastifyInstance, opts: { db: 
     }
     if (auth.stage !== 'full') return reply.status(401).send({ error: 'unauthenticated' });
     if (access === 'session') return;
-    if (!hasCapability(auth.user.role, access)) return reply.status(403).send({ error: 'forbidden' });
+    const needed = typeof access === 'string' ? [access] : access;
+    if (!needed.some((cap) => hasCapability(auth.user.role, cap))) return reply.status(403).send({ error: 'forbidden' });
   });
 });

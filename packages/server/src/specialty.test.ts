@@ -138,7 +138,7 @@ describe('starter layouts', () => {
   it('the library lists the template blocks with their template, for the editor to filter', async () => {
     const lib = (await builder.get('/api/library/blocks')).body.blocks as BlockDefinition[];
     expect(lib.filter((d) => d.category === 'events').map((d) => d.type)).toEqual(['event_details', 'agenda', 'speakers', 'registration_cta']);
-    expect(lib.filter((d) => d.category === 'shared').length).toBe(8);
+    expect(lib.filter((d) => d.category === 'shared').length).toBe(9);
   });
 });
 
