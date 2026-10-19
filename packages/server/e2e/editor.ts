@@ -240,6 +240,24 @@ try {
   assert((await blocks.count()) === 7, 'a template block can be added');
   ok('a new email can start from the ready-made layout, and only offers its own template blocks');
 
+  // ---- live preview beside the canvas
+  await page.getByLabel('Live preview', { exact: true }).check();
+  const live = page.locator('[data-testid="live-preview"]');
+  await live.waitFor();
+  const liveFrame = page.frameLocator('iframe[title="Phone preview"]');
+  await liveFrame.getByText('Unsubscribe').first().waitFor();
+  assert((await page.getByRole('button', { name: 'Add Agenda to the end of the email' }).count()) === 1, 'compact block list still has Add buttons');
+  await blocks.first().click();
+  const headline = page.getByLabel('Headline', { exact: true });
+  await headline.fill('Live preview headline');
+  await page.getByText('All changes saved').waitFor();
+  await liveFrame.getByText('Live preview headline').waitFor();
+  await live.getByRole('button', { name: 'Desktop' }).click();
+  await page.frameLocator('iframe[title="Desktop preview"]').getByText('Live preview headline').waitFor();
+  await page.getByLabel('Live preview', { exact: true }).uncheck();
+  assert((await live.count()) === 0, 'live preview closes');
+  ok('live preview shows the real email beside the canvas and refreshes after each saved edit');
+
   // ---- other roles can look but not change
   for (const role of ['admin', 'qa_reviewer'] as const) {
     const { page: other } = await openAs(browser, role);

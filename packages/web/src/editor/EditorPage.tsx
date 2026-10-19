@@ -53,7 +53,7 @@ function useLibrary(): BlockDefinition[] {
 }
 
 // ---------- Library (originals) ----------
-function LibraryItem({ def, canEdit: canEditBasic }: { def: BlockDefinition; canEdit: boolean }) {
+function LibraryItem({ def, canEdit: canEditBasic, compact }: { def: BlockDefinition; canEdit: boolean; compact?: boolean }) {
   const { can } = useSession();
   const canEdit = def.type === 'custom_html' ? can('html.custom') : canEditBasic; // Custom HTML is Admin-only; everything else is for Builders
   const addBlock = useEditor((s) => s.addBlock);
@@ -65,7 +65,7 @@ function LibraryItem({ def, canEdit: canEditBasic }: { def: BlockDefinition; can
         <strong>{def.label}</strong>
         <div className="muted small">{def.description}</div>
       </div>
-      <button type="button" disabled={!canEdit} aria-label={`Add ${def.label} to the end of the email`} onClick={() => addBlock(def)}>Add</button>
+      <button type="button" disabled={!canEdit} aria-label={`Add ${def.label} to the end of the email`} title={def.label} onClick={() => addBlock(def)}>{compact ? def.label.slice(0, 2) : 'Add'}</button>
     </li>
   );
 }
@@ -287,6 +287,44 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
   );
 }
 
+/** Live preview: the real email HTML next to the canvas, refreshed shortly after each saved edit. */
+function LivePane({ campaignId }: { campaignId: string }) {
+  const saveState = useEditor((s) => s.saveState);
+  const version = useEditor((s) => s.version);
+  const [html, setHtml] = useState('');
+  const [issues, setIssues] = useState(0);
+  const [kind, setKind] = useState<'phone' | 'desktop'>('phone');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (saveState !== 'saved') return; // wait until the edit has been saved: the preview always shows saved content
+    let live = true;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview?as=sample`);
+        if (live) { setHtml(r.html); setIssues(r.placeholderIssues.length); setError(''); }
+      } catch (e) { if (live) setError(errorText(e)); }
+    }, 600);
+    return () => { live = false; clearTimeout(timer); };
+  }, [campaignId, saveState, version]);
+  return (
+    <div className="live-pane" data-testid="live-preview">
+      <div className="preview-bar">
+        <strong>Live preview</strong>
+        <span role="group" aria-label="Preview device">
+          <button type="button" aria-pressed={kind === 'phone'} onClick={() => setKind('phone')}>Phone</button>
+          <button type="button" aria-pressed={kind === 'desktop'} onClick={() => setKind('desktop')}>Desktop</button>
+        </span>
+      </div>
+      <p className="muted small">Browser preview of the saved email, not an Outlook or Gmail simulation.{saveState !== 'saved' && ' Updating after your changes are saved…'}</p>
+      {issues > 0 && <p className="error" role="alert">{issues} personalization problem(s): see the Preview tab.</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {kind === 'phone'
+        ? <DeviceFrame key="p" kind="phone" html={html} widths={PHONE_WIDTHS} initial={375} />
+        : <DeviceFrame key="d" kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={600} />}
+    </div>
+  );
+}
+
 // ---------- Versions ----------
 function VersionsPane({ campaignId, canEdit, onRestored }: { campaignId: string; canEdit: boolean; onRestored: () => void }) {
   const load = useEditor((s) => s.load);
@@ -366,6 +404,7 @@ export function EditorPage() {
   const [tab, setTab] = useState<'edit' | 'preview' | 'versions'>('edit');
   const [loadError, setLoadError] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -463,6 +502,9 @@ export function EditorPage() {
             <button type="button" onClick={s.redo} disabled={s.future.length === 0} aria-label="Redo">↷ Redo</button>
           </>
         )}
+        {tab === 'edit' && (
+          <label className="small"><input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Live preview</label>
+        )}
         <div role="tablist" className="tabs">
           {(['edit', 'preview', 'versions'] as const).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
@@ -474,21 +516,22 @@ export function EditorPage() {
 
       {tab === 'edit' && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e: DragStartEvent) => setDragging(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
-          <div className="editor-grid">
+          <div className={`editor-grid${live ? ' live' : ''}`}>
             <aside className="panel-left" aria-label="Block library">
               <h2>Blocks</h2>
               <p className="muted small">Drag a block into the email, or press Add. Each one becomes your own copy to edit.</p>
               <h3 className="lib-group">Basic blocks</h3>
-              <ul className="lib-list">{lib.filter((d) => d.category === 'shared').map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} />)}</ul>
+              <ul className="lib-list">{lib.filter((d) => d.category === 'shared').map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} compact={live} />)}</ul>
               {lib.some((d) => d.category === s.content.settings.palette) && (
                 <>
                   <h3 className="lib-group">{paletteOf(s.content.settings.palette).label} blocks</h3>
-                  <ul className="lib-list">{lib.filter((d) => d.category === s.content.settings.palette).map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} />)}</ul>
+                  <ul className="lib-list">{lib.filter((d) => d.category === s.content.settings.palette).map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} compact={live} />)}</ul>
                 </>
               )}
             </aside>
             <section className="panel-center" aria-label="Email canvas"><Canvas canEdit={canAny} /></section>
             <aside className="panel-right" aria-label="Properties"><Properties canEdit={canEdit} /></aside>
+            {live && <aside className="panel-live" aria-label="Live preview pane"><LivePane campaignId={id} /></aside>}
           </div>
           <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>
         </DndContext>

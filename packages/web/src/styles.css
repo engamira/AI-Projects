@@ -149,6 +149,10 @@ th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
 .panel-left { border-right: 1px solid var(--border); }
 .panel-right { border-left: 1px solid var(--border); }
 .panel-left h2, .panel-right h2 { margin-top: 0; }
+/* Live preview: block list shrinks to short buttons; the real email shows on the right */
+.editor-grid.live { grid-template-columns: 64px minmax(0, 1fr) 280px minmax(0, 440px); }
+.editor-grid.live .panel-left > p, .editor-grid.live .panel-left h2, .editor-grid.live .lib-group, .editor-grid.live .lib-text { display: none; }
+.panel-live { background: var(--panel-bg); border-left: 1px solid var(--border); padding: 12px; }
 .panel-right h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; }
 .lib-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .lib-item { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: var(--bg); }
@@ -187,6 +191,7 @@ label.inline select, label.inline input { width: auto; }
 @media (max-width: 1000px) {
   .wide-shell { height: auto; }
   .editor-grid { grid-template-columns: 1fr; display: flex; flex-direction: column; }
+  .editor-grid.live { display: flex; flex-direction: column; }
   .panel-left, .panel-right { border: 0; border-bottom: 1px solid var(--border); }
   .panel-center { order: -1; min-height: 60vh; }
 }
