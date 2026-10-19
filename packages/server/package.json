@@ -11,7 +11,7 @@
     "create-admin": "tsx --env-file-if-exists=../../.env src/cli/create-admin.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "e2e": "tsx e2e/smoke.ts && tsx e2e/editor.ts && tsx e2e/brand.ts"
+    "e2e": "tsx e2e/smoke.ts && tsx e2e/editor.ts && tsx e2e/brand.ts && tsx e2e/mobile.ts"
   },
   "dependencies": {
     "@cl/shared": "^0.0.0",

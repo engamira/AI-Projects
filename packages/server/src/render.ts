@@ -16,20 +16,23 @@ const href = (v: string): string => (v.trim() === '' ? '#' : esc(v));
 
 type Ctx = { width: number; c: Palette };
 
-function button(label: string, url: string, bg: string, color: string, o: { align?: string; radius?: number; container?: string; padding?: string; full?: boolean } = {}): string {
-  return `<mj-button href="${href(url)}" background-color="${bg}" color="${color}" border-radius="${o.radius ?? 6}px" align="${o.align ?? 'center'}" font-size="16px" font-weight="700" inner-padding="12px 28px" padding="${o.padding ?? '8px 24px'}"${o.container ? ` container-background-color="${o.container}"` : ''}${o.full ? ' width="100%"' : ''}>${esc(label)}</mj-button>`;
+function button(label: string, url: string, bg: string, color: string, o: { align?: string; radius?: number; container?: string; padding?: string; full?: boolean; cssClass?: string } = {}): string {
+  return `<mj-button${o.cssClass ? ` css-class="${o.cssClass}"` : ''} href="${href(url)}" background-color="${bg}" color="${color}" border-radius="${o.radius ?? 6}px" align="${o.align ?? 'center'}" font-size="16px" font-weight="700" inner-padding="12px 28px" padding="${o.padding ?? '8px 24px'}"${o.container ? ` container-background-color="${o.container}"` : ''}${o.full ? ' width="100%"' : ''}>${esc(label)}</mj-button>`;
 }
 
-function imageOrPlaceholder(ctx: Ctx, src: string, alt: string, widthPx: number, link: string, o: { align?: string; padding?: string } = {}): string {
+function imageOrPlaceholder(ctx: Ctx, src: string, alt: string, widthPx: number, link: string, o: { align?: string; padding?: string; cssClass?: string } = {}): string {
   if (!hasText(src)) {
-    return `<mj-text align="center" color="${ctx.c.muted}" font-size="14px" padding="${o.padding ?? '0'}" container-background-color="${ctx.c.placeholder}"><div style="padding:32px 12px">Image placeholder: add a picture</div></mj-text>`;
+    return `<mj-text${o.cssClass ? ` css-class="${o.cssClass}"` : ''} align="center" color="${ctx.c.muted}" font-size="14px" padding="${o.padding ?? '0'}" container-background-color="${ctx.c.placeholder}"><div style="padding:32px 12px">Image placeholder: add a picture</div></mj-text>`;
   }
-  return `<mj-image src="${esc(src)}" alt="${esc(alt)}" width="${widthPx}px" align="${o.align ?? 'center'}" padding="${o.padding ?? '0'}"${hasText(link) ? ` href="${esc(link)}"` : ''} />`;
+  return `<mj-image${o.cssClass ? ` css-class="${o.cssClass}"` : ''} src="${esc(src)}" alt="${esc(alt)}" width="${widthPx}px" align="${o.align ?? 'center'}" padding="${o.padding ?? '0'}"${hasText(link) ? ` href="${esc(link)}"` : ''} />`;
 }
 
 function section(bg: string, py: number, px: number, inner: string): string {
   return `<mj-section background-color="${bg}" padding="${py}px ${px}px"><mj-column>${inner}</mj-column></mj-section>`;
 }
+
+/** Marks content that is centered on phones (see the phone-only rules in the email head). */
+const MOBILE_CENTER = 'mobile-center';
 
 const RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
   header: (p, ctx) => {
@@ -73,10 +76,10 @@ const RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
       const k = (x: string) => `${side}${x}`;
       const half = Math.floor(ctx.width / 2);
       return [
-        hasText(s(p, k('Image'))) ? imageOrPlaceholder(ctx, s(p, k('Image')), s(p, k('ImageAlt')), half, '', { padding: '0 0 12px' }) : '',
-        hasText(s(p, k('Heading'))) ? `<mj-text color="${c.text}" font-size="20px" font-weight="700" padding="0 0 6px">${para(s(p, k('Heading')))}</mj-text>` : '',
-        hasText(s(p, k('Body'))) ? `<mj-text color="${c.text}" font-size="15px" line-height="1.5" padding="0 0 10px">${para(s(p, k('Body')))}</mj-text>` : '',
-        hasText(s(p, k('ButtonText'))) ? button(s(p, k('ButtonText')), s(p, k('ButtonUrl')), c.button, c.onButton, { align: 'left', padding: '0' }) : '',
+        hasText(s(p, k('Image'))) ? imageOrPlaceholder(ctx, s(p, k('Image')), s(p, k('ImageAlt')), half, '', { padding: '0 0 12px', cssClass: MOBILE_CENTER }) : '',
+        hasText(s(p, k('Heading'))) ? `<mj-text css-class="${MOBILE_CENTER}" color="${c.text}" font-size="20px" font-weight="700" padding="0 0 6px">${para(s(p, k('Heading')))}</mj-text>` : '',
+        hasText(s(p, k('Body'))) ? `<mj-text css-class="${MOBILE_CENTER}" color="${c.text}" font-size="15px" line-height="1.5" padding="0 0 10px">${para(s(p, k('Body')))}</mj-text>` : '',
+        hasText(s(p, k('ButtonText'))) ? button(s(p, k('ButtonText')), s(p, k('ButtonUrl')), c.button, c.onButton, { align: 'left', padding: '0', cssClass: MOBILE_CENTER }) : '',
       ].join('');
     };
     const py = n(p, 'paddingY');
@@ -315,6 +318,14 @@ export function buildMjml(input: EmailContent, opts: RenderOptions = {}): string
 <mj-head>
   <mj-title>${esc(st.subject)}</mj-title>
   <mj-preview>${esc(st.preheader)}</mj-preview>
+  <mj-style>
+    /* Phones (below 480px, where columns stack): center the content of blocks that ask for it. Wider screens are not affected. */
+    @media only screen and (max-width: 479px) {
+      .mobile-center, .mobile-center div, .mobile-center td, .mobile-center p { text-align: center !important; }
+      .mobile-center table { margin-left: auto !important; margin-right: auto !important; }
+      .mobile-center img { margin-left: auto !important; margin-right: auto !important; }
+    }
+  </mj-style>
   <mj-attributes><mj-all font-family="${esc(st.fontFamily)}" /><mj-text padding="0" /></mj-attributes>
 </mj-head>
 <mj-body width="${st.contentWidth}px" background-color="${c.page}">
