@@ -5,6 +5,7 @@ import {
   cloneContent,
   collectAssetIds,
   PALETTE_IDS,
+  SAMPLE_RECIPIENTS,
   emptyContent,
   normalizeContent,
   starterContent,
@@ -261,9 +262,11 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
   });
 
   // ---- preview: the same renderer that QA and sending will use ----
-  app.get<{ Params: { id: string }; Querystring: { revision?: string } }>('/api/campaigns/:id/preview', { config: { access: 'campaign.view' } }, async (req, reply): Promise<PreviewResponse | FastifyReply> => {
+  app.get<{ Params: { id: string }; Querystring: { revision?: string; as?: string } }>('/api/campaigns/:id/preview', { config: { access: 'campaign.view' } }, async (req, reply): Promise<PreviewResponse | FastifyReply> => {
     const { id } = idParam.parse(req.params);
     const rid = z.string().uuid().optional().parse(req.query.revision);
+    const as = z.enum(['sample', 'empty', 'raw']).default('sample').parse(req.query.as);
+    const recipient = SAMPLE_RECIPIENTS.find((r) => r.id === as)!.recipient;
     const c = await getCampaign(db, id);
     if (!c) return notFound(reply);
     let content = c.draft_content;
@@ -274,6 +277,6 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     }
     // Every email shows the shared header and footer of its template (latest version).
     const brand = await latestProfile(db, content.settings.palette);
-    return renderEmail(content, { baseUrl: config.baseUrl, brand });
+    return renderEmail(content, { baseUrl: config.baseUrl, brand, ...(recipient === null ? {} : { recipient }) });
   });
 }

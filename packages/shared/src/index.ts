@@ -118,9 +118,11 @@ export * from './palettes.js';
 export * from './brand.js';
 export * from './templates.js';
 export * from './content.js';
+export * from './personalize.js';
 
 import type { BlockDefinition } from './blocks.js';
 import type { EmailContent } from './content.js';
+import type { PlaceholderIssue } from './personalize.js';
 
 export type LibraryResponse = { blocks: BlockDefinition[] };
 
@@ -148,4 +150,4 @@ export type RevisionDto = {
   hash: string;
   restoredFromNumber: number | null;
 };
-export type PreviewResponse = { html: string; warnings: string[] };
+export type PreviewResponse = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[] };

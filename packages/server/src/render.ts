@@ -1,5 +1,5 @@
 import mjml2html from 'mjml';
-import { ASSET_REF, defaultBrand, normalizeContent, paletteOf, type BlockInstance, type EmailContent, type Palette, type Props } from '@cl/shared';
+import { ASSET_REF, defaultBrand, findPlaceholderIssues, normalizeContent, paletteOf, personalize, type PlaceholderIssue, type Recipient, type BlockInstance, type EmailContent, type Palette, type Props } from '@cl/shared';
 
 // Turns the stored structured content into email HTML (via MJML).
 // Every text and URL value is escaped here; content is also validated before it is ever saved.
@@ -336,8 +336,45 @@ ${body}
 </mjml>`;
 }
 
-/** The one place that produces email HTML: preview, QA and sending all use this output. */
-export async function renderEmail(content: EmailContent, opts: RenderOptions = {}): Promise<{ html: string; warnings: string[] }> {
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', nbsp: ' ', apos: "'" };
+
+/** Plain-text alternative made from the finished email HTML, so it always matches what the HTML says. */
+export function htmlToPlainText(html: string): string {
+  const body = html.replace(/<head[\s\S]*?<\/head>/i, '').replace(/<(style|script)[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  return body
+    .replace(/<a\b[^>]*?href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, url: string, inner: string) => {
+      const label = inner.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      const u = url.replace(/&amp;/g, '&');
+      return !label ? '' : !u || u === '#' || label === u ? label : `${label} (${u})`;
+    })
+    .replace(/<img\b[^>]*?alt="([^"]*)"[^>]*>/gi, (_m, alt: string) => (alt.trim() ? `[${alt.trim()}]` : ''))
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|tr|li|table)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(#\d+|#x[\da-f]+|[a-z]+);/gi, (m, e: string) => {
+      if (e[0] === '#') {
+        const cp = e[1]?.toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return Number.isFinite(cp) ? String.fromCodePoint(cp) : m;
+      }
+      return ENTITIES[e.toLowerCase()] ?? m;
+    })
+    .replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n')
+    .trim() + '\n';
+}
+
+export type RenderedEmail = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[] };
+
+/**
+ * The one place that produces email HTML and its plain-text alternative: preview, QA and sending all use this output.
+ * `recipient`: undefined leaves placeholders as typed; an object (or null for "nobody known") fills them in with fallbacks.
+ */
+export async function renderEmail(content: EmailContent, opts: RenderOptions & { recipient?: Recipient | null } = {}): Promise<RenderedEmail> {
   const out = await mjml2html(buildMjml(content, opts), { validationLevel: 'soft', minify: false });
-  return { html: out.html, warnings: out.errors.map((e) => e.formattedMessage ?? e.message ?? 'Unknown MJML warning') };
+  let html = out.html;
+  let text = htmlToPlainText(html);
+  if (opts.recipient !== undefined) {
+    html = personalize(html, opts.recipient, { html: true });
+    text = personalize(text, opts.recipient, { html: false });
+  }
+  return { html, text, warnings: out.errors.map((e) => e.formattedMessage ?? e.message ?? 'Unknown MJML warning'), placeholderIssues: findPlaceholderIssues(normalizeContent(content)) };
 }

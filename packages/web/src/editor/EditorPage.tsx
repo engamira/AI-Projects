@@ -25,7 +25,10 @@ import {
   type CampaignDto,
   type EmailSettings,
   type LibraryResponse,
+  type PlaceholderIssue,
   type PreviewResponse,
+  type SampleId,
+  SAMPLE_RECIPIENTS,
   type PropValue,
   type RevisionDto,
 } from '@cl/shared';
@@ -216,6 +219,10 @@ function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop
 
 function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; revision?: RevisionDto; onClose?: () => void }) {
   const [html, setHtml] = useState('');
+  const [text, setText] = useState('');
+  const [issues, setIssues] = useState<PlaceholderIssue[]>([]);
+  const [as, setAs] = useState<SampleId>('sample');
+  const [showText, setShowText] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState('');
   // The desktop view starts as wide as the screen allows next to the phone, between 600 and 1024 px.
@@ -226,26 +233,44 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
     (async () => {
       try {
         if (!revision && !(await flushSave())) throw new Error('Fix the problem shown at the top before previewing.');
-        const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview${revision ? `?revision=${revision.id}` : ''}`);
-        if (live) { setHtml(r.html); setWarnings(r.warnings); setError(''); }
+        const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview?as=${as}${revision ? `&revision=${revision.id}` : ''}`);
+        if (live) { setHtml(r.html); setText(r.text); setIssues(r.placeholderIssues); setWarnings(r.warnings); setError(''); }
       } catch (e) {
         if (live) setError(errorText(e));
       }
     })();
     return () => { live = false; };
-  }, [campaignId, revision]);
+  }, [campaignId, revision, as]);
 
   return (
     <div className="preview-pane">
       <div className="preview-bar">
         <strong>{revision ? `Version ${revision.number}` : 'Current draft'}</strong>
         <span className="muted small">Phone and desktop side by side. Each has its own width.</span>
+        <label className="small">Preview as{' '}
+          <select value={as} onChange={(e) => setAs(e.target.value as SampleId)}>
+            {SAMPLE_RECIPIENTS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+        </label>
+        <button type="button" onClick={() => setShowText((v) => !v)}>{showText ? 'Show email' : 'Show plain text'}</button>
         {onClose && <button type="button" onClick={onClose}>Close preview</button>}
       </div>
+      {issues.length > 0 && (
+        <div className="error" role="alert">
+          <strong>{issues.length} personalization problem{issues.length > 1 ? 's' : ''} to fix before sending:</strong>
+          <ul>{issues.map((i, k) => <li key={k}><code>{i.text}</code> — {i.message}</li>)}</ul>
+        </div>
+      )}
       <p className="muted small">Browser preview. It is not an Outlook or Gmail simulation: real email apps can render differently.</p>
       {error && <p className="error" role="alert">{error}</p>}
       {warnings.length > 0 && <details><summary>{warnings.length} rendering note(s)</summary><pre>{warnings.join('\n')}</pre></details>}
-      <div className="preview-devices">
+      {showText && (
+        <div>
+          <p className="muted small">Plain-text version, sent alongside the HTML for email apps that cannot show it.</p>
+          <pre className="plain-text" style={{ whiteSpace: 'pre-wrap', maxWidth: 680, padding: 16, border: '1px solid var(--border, #ccc)', borderRadius: 8 }}>{text}</pre>
+        </div>
+      )}
+      <div className="preview-devices" style={showText ? { display: "none" } : undefined}>
         <DeviceFrame kind="phone" html={html} widths={PHONE_WIDTHS} initial={375} />
         <DeviceFrame kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={desktopStart} />
       </div>
