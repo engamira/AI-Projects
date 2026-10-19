@@ -10,11 +10,17 @@ const has = (p: Props, k: string) => s(p, k).trim() !== '';
 const isImg = (u: string) => /^(https:\/\/|asset:)/i.test(u);
 const lines = (v: string) => <span style={{ whiteSpace: 'pre-wrap' }}>{v}</span>;
 
-function Pic({ c, src, alt, round, size }: { c: Palette; src: string; alt: string; round?: boolean; size?: number }) {
+/** Library pictures are shown as the same ready-made crops the email uses ("square-240.jpg", "card-480.jpg"). */
+const cropped = (src: string, variant?: string): string => {
+  const url = pictureSrc(src);
+  return variant && url.startsWith('/media/') ? `${url}/${variant}` : url;
+};
+
+function Pic({ c, src, alt, round, size, variant }: { c: Palette; src: string; alt: string; round?: boolean; size?: number; variant?: string }) {
   if (!isImg(src)) {
     return <div style={{ background: c.placeholder, color: c.muted, fontSize: 13, textAlign: 'center', padding: round ? 0 : '28px 8px', width: round ? size : undefined, height: round ? size : undefined, lineHeight: round ? `${size}px` : undefined, borderRadius: round ? '50%' : 0, margin: round ? '0 auto' : 0 }}>{round ? 'Photo' : 'Picture'}</div>;
   }
-  return <img src={pictureSrc(src)} alt={alt} style={{ display: 'block', maxWidth: '100%', width: round ? size : '100%', height: round ? size : 'auto', objectFit: 'cover', borderRadius: round ? '50%' : 0, margin: round ? '0 auto' : 0 }} />;
+  return <img src={cropped(src, variant)} alt={alt} style={{ display: 'block', maxWidth: '100%', width: round ? size : '100%', height: round ? size : 'auto', objectFit: 'cover', borderRadius: round ? '50%' : 0, margin: round ? '0 auto' : 0 }} />;
 }
 
 function Btn({ label, bg, color }: { label: string; bg: string; color: string }) {
@@ -41,7 +47,7 @@ function Cards({ p, c }: { p: Props; c: Palette }) {
       <Row>
         {[1, 2, 3].filter((i) => ['Image', 'Name', 'Detail', 'Price', 'ButtonText'].some((x) => has(p, `c${i}${x}`))).map((i) => (
           <Col key={i}>
-            <div style={{ marginBottom: 10 }}><Pic c={c} src={s(p, `c${i}Image`)} alt={s(p, `c${i}ImageAlt`)} /></div>
+            <div style={{ marginBottom: 10 }}><Pic c={c} src={s(p, `c${i}Image`)} alt={s(p, `c${i}ImageAlt`)} variant="card-480.jpg" /></div>
             <div style={{ fontWeight: 700, fontSize: 18, color: c.text }}>{s(p, `c${i}Name`)}</div>
             <div style={{ fontSize: 14, color: c.muted }}>{s(p, `c${i}Detail`)}</div>
             <div style={{ fontWeight: 700, color: c.link, margin: '2px 0 8px' }}>{s(p, `c${i}Price`)}</div>
@@ -138,7 +144,7 @@ export function SpecialtyView({ type, p, c }: { type: string; p: Props; c: Palet
           <Row>
             {[1, 2, 3].filter((i) => ['Image', 'Name', 'Role', 'Bio'].some((x) => has(p, `p${i}${x}`))).map((i) => (
               <Col key={i}>
-                <div style={{ marginBottom: 10 }}><Pic c={c} src={s(p, `p${i}Image`)} alt={s(p, `p${i}ImageAlt`)} round size={110} /></div>
+                <div style={{ marginBottom: 10 }}><Pic c={c} src={s(p, `p${i}Image`)} alt={s(p, `p${i}ImageAlt`)} round size={110} variant="square-240.jpg" /></div>
                 <div style={{ fontWeight: 700, fontSize: 18, color: c.text }}>{s(p, `p${i}Name`)}</div>
                 <div style={{ fontWeight: 700, fontSize: 14, color: c.link, marginBottom: 6 }}>{s(p, `p${i}Role`)}</div>
                 <div style={{ fontSize: 14, color: c.muted, lineHeight: 1.5 }}>{s(p, `p${i}Bio`)}</div>

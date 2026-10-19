@@ -113,6 +113,12 @@ const RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
 
 // ---------- Template-specific blocks ----------
 
+/**
+ * Email apps cannot crop pictures, so library pictures used in fixed shapes (round speaker photos, equal-height cards)
+ * are requested as ready-made crops of the right shape. Pictures from other websites are left as they are.
+ */
+const crop = (url: string, variant: string): string => url.replace(/(\/media\/[0-9a-f-]{36})$/i, `$1/${variant}`);
+
 const sectionHeading = (t: string, c: Palette, bg: string, color: string, py: number): string =>
   hasText(t) ? `<mj-section background-color="${bg}" padding="${py}px 24px 8px"><mj-column><mj-text align="center" color="${color}" font-size="24px" font-weight="700" line-height="1.3" padding="0">${para(t)}</mj-text></mj-column></mj-section>` : '';
 
@@ -132,7 +138,7 @@ function cardsBlock(p: Props, ctx: Ctx, noun: 'c'): string {
     const k = (x: string) => `${noun}${i}${x}`;
     if (!['Image', 'Name', 'Detail', 'Price', 'ButtonText'].some((x) => hasText(s(p, k(x))))) return '';
     return [
-      imageOrPlaceholder(ctx, s(p, k('Image')), s(p, k('ImageAlt')), third, '', { padding: '0 0 12px' }),
+      imageOrPlaceholder(ctx, crop(s(p, k('Image')), 'card-480.jpg'), s(p, k('ImageAlt')), third, '', { padding: '0 0 12px' }),
       hasText(s(p, k('Name'))) ? `<mj-text align="center" color="${c.text}" font-size="18px" font-weight="700" padding="0 0 2px">${para(s(p, k('Name')))}</mj-text>` : '',
       hasText(s(p, k('Detail'))) ? `<mj-text align="center" color="${c.muted}" font-size="14px" padding="0 0 4px">${para(s(p, k('Detail')))}</mj-text>` : '',
       hasText(s(p, k('Price'))) ? `<mj-text align="center" color="${c.link}" font-size="17px" font-weight="700" padding="0 0 10px">${para(s(p, k('Price')))}</mj-text>` : '',
@@ -226,7 +232,7 @@ const SPECIALTY_RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
       const k = (x: string) => `p${i}${x}`;
       if (!['Image', 'Name', 'Role', 'Bio'].some((x) => hasText(s(p, k(x))))) return '';
       const img = hasText(s(p, k('Image')))
-        ? `<mj-image src="${esc(s(p, k('Image')))}" alt="${esc(s(p, k('ImageAlt')))}" width="120px" border-radius="999px" align="center" padding="0 0 10px" />`
+        ? `<mj-image src="${esc(crop(s(p, k('Image')), 'square-240.jpg'))}" alt="${esc(s(p, k('ImageAlt')))}" width="120px" height="120px" border-radius="999px" align="center" padding="0 0 10px" />`
         : `<mj-text align="center" color="${c.muted}" font-size="13px" padding="0 0 10px"><div style="width:120px;height:120px;line-height:120px;margin:0 auto;border-radius:60px;background:${c.placeholder}">Photo</div></mj-text>`;
       return img
         + (hasText(s(p, k('Name'))) ? `<mj-text align="center" color="${c.text}" font-size="18px" font-weight="700" padding="0 0 2px">${para(s(p, k('Name')))}</mj-text>` : '')

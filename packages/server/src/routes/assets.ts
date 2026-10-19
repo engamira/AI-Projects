@@ -2,7 +2,7 @@ import multipart from '@fastify/multipart';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ASSET_MAX_BYTES } from '@cl/shared';
-import { getAssetFile, listAssets, saveAsset } from '../assets.js';
+import { getAssetFile, getVariantFile, listAssets, saveAsset } from '../assets.js';
 import type { Db } from '../db.js';
 import { logActivity } from '../services.js';
 
@@ -27,14 +27,8 @@ export async function assetRoutes(app: FastifyInstance, db: Db): Promise<void> {
 
   app.get('/api/assets', { config: { access: 'assets.manage' } }, async () => listAssets(db));
 
-  // Public on purpose: email apps load pictures from this address when a recipient opens the email.
-  // The id is random and unguessable; nothing but images can ever be stored here.
-  app.get<{ Params: { id: string } }>('/media/:id', { config: { rateLimit: false } }, async (req, reply) => {
-    const id = z.string().uuid().safeParse(req.params.id);
-    if (!id.success) return reply.status(404).send({ error: 'not_found' });
-    const file = await getAssetFile(db, id.data);
-    if (!file) return reply.status(404).send({ error: 'not_found' });
-    return reply
+  const send = (reply: import('fastify').FastifyReply, file: { mime: string; data: Buffer }) =>
+    reply
       .header('content-type', file.mime)
       .header('content-length', file.data.length)
       .header('content-disposition', 'inline')
@@ -42,5 +36,23 @@ export async function assetRoutes(app: FastifyInstance, db: Db): Promise<void> {
       .header('cross-origin-resource-policy', 'cross-origin') // helmet's default would block other sites (email apps) from showing it
       .header('x-content-type-options', 'nosniff')
       .send(file.data);
+
+  // Cropped copy, e.g. /media/<id>/square-240.jpg (speaker photos) or /media/<id>/card-480.jpg (4:3 cards).
+  app.get<{ Params: { id: string; variant: string } }>('/media/:id/:variant', { config: { rateLimit: false } }, async (req, reply) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+    if (!id.success) return reply.status(404).send({ error: 'not_found' });
+    const file = await getVariantFile(db, id.data, req.params.variant);
+    if (!file) return reply.status(404).send({ error: 'not_found' });
+    return send(reply, file);
+  });
+
+  // Public on purpose: email apps load pictures from this address when a recipient opens the email.
+  // The id is random and unguessable; nothing but images can ever be stored here.
+  app.get<{ Params: { id: string } }>('/media/:id', { config: { rateLimit: false } }, async (req, reply) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+    if (!id.success) return reply.status(404).send({ error: 'not_found' });
+    const file = await getAssetFile(db, id.data);
+    if (!file) return reply.status(404).send({ error: 'not_found' });
+    return send(reply, file);
   });
 }

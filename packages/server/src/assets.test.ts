@@ -1,3 +1,5 @@
+import { imageSize } from 'image-size';
+import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { emptyContent, createInstance, blockDefinition, type EmailContent } from '@cl/shared';
 import { createTestApp, type Client, type TestApp } from './testkit.js';
@@ -128,5 +130,63 @@ describe('pictures inside emails', () => {
     expect((await put('asset:not-an-id')).status).toBe(400);
     expect((await put('http://insecure.example/x.png')).status).toBe(400);
     expect((await put('javascript:alert(1)')).status).toBe(400);
+  });
+});
+
+describe('cropped copies for round and equal-size pictures', () => {
+  const dims = (buf: Buffer) => imageSize(buf);
+  const photo = async (w: number, h: number, color = '#c0392b') => sharp({ create: { width: w, height: h, channels: 3, background: color } }).png().toBuffer();
+
+  it('wide, tall and square pictures all come out the same shape, and the original is never changed', async () => {
+    for (const [w, h] of [[600, 200], [200, 700], [300, 300]] as const) {
+      const buf = await photo(w, h);
+      const asset = (await builder.upload('/api/assets', `p${w}x${h}.png`, buf)).body;
+      const sq = await t.app.inject({ url: `/media/${asset.id}/square-240.jpg` });
+      expect(sq.statusCode, `${w}x${h}`).toBe(200);
+      expect(sq.headers['content-type']).toBe('image/jpeg');
+      expect(sq.headers['cross-origin-resource-policy']).toBe('cross-origin');
+      expect(sq.headers['cache-control']).toContain('immutable');
+      expect(dims(sq.rawPayload)).toMatchObject({ width: 240, height: 240 });
+      const card = await t.app.inject({ url: `/media/${asset.id}/card-480.jpg` });
+      expect(dims(card.rawPayload)).toMatchObject({ width: 480, height: 360 });
+      const original = await t.app.inject({ url: `/media/${asset.id}` });
+      expect(original.rawPayload.equals(buf)).toBe(true);
+    }
+  });
+
+  it('is made once and then reused', async () => {
+    const asset = (await builder.upload('/api/assets', 'once.png', await photo(500, 250, '#2980b9'))).body;
+    const a = await t.app.inject({ url: `/media/${asset.id}/square-120.jpg` });
+    const b = await t.app.inject({ url: `/media/${asset.id}/square-120.jpg` });
+    expect(a.rawPayload.equals(b.rawPayload)).toBe(true);
+    expect((await t.db.query('SELECT count(*)::int AS n FROM asset_variant WHERE asset_id = $1', [asset.id])).rows[0].n).toBe(1);
+  });
+
+  it('only the agreed sizes exist; anything else is a plain 404', async () => {
+    const asset = (await builder.upload('/api/assets', 'sizes.png', await photo(400, 400, '#27ae60'))).body;
+    for (const v of ['square-241.jpg', 'square-9999.jpg', 'card-100.jpg', 'square-240.png', 'square-240', 'portrait-240.jpg', '..%2F..%2Fetc', 'square-240.jpg.exe']) {
+      expect((await t.app.inject({ url: `/media/${asset.id}/${v}` })).statusCode, v).toBe(404);
+    }
+    expect((await t.app.inject({ url: '/media/00000000-0000-4000-8000-000000000000/square-240.jpg' })).statusCode).toBe(404);
+    expect((await t.app.inject({ url: '/media/not-a-uuid/square-240.jpg' })).statusCode).toBe(404);
+  });
+
+  it('the generated email asks for the crops for round photos and cards, and leaves other websites\' pictures alone', async () => {
+    const asset = (await builder.upload('/api/assets', 'person.png', await photo(640, 320, '#8e44ad'))).body;
+    const speakers = createInstance(blockDefinition('speakers')!);
+    speakers.props.p1Image = `asset:${asset.id}`;
+    speakers.props.p2Image = 'https://example.com/photo.jpg';
+    const events = (await builder.post('/api/campaigns', { name: 'Crops', palette: 'events' })).body;
+    expect((await builder.put(`/api/campaigns/${events.id}/draft`, { content: { ...events.draft.content, blocks: [speakers] }, baseVersion: 1 })).status).toBe(200);
+    const html = (await builder.get(`/api/campaigns/${events.id}/preview`)).body.html as string;
+    expect(html).toContain(`/media/${asset.id}/square-240.jpg`);
+    expect(html).toContain('https://example.com/photo.jpg');
+    expect(html).not.toContain('example.com/photo.jpg/square');
+
+    const products = createInstance(blockDefinition('products')!);
+    products.props.c1Image = `asset:${asset.id}`;
+    const cosmetics = (await builder.post('/api/campaigns', { name: 'Cards', palette: 'cosmetics' })).body;
+    await builder.put(`/api/campaigns/${cosmetics.id}/draft`, { content: { ...cosmetics.draft.content, blocks: [products] }, baseVersion: 1 });
+    expect(((await builder.get(`/api/campaigns/${cosmetics.id}/preview`)).body.html as string)).toContain(`/media/${asset.id}/card-480.jpg`);
   });
 });

@@ -15,6 +15,7 @@ const db = createPool(process.env.DATABASE_URL);
 // Bring the database up to date before serving traffic. Safe if several instances start together.
 const applied = await runMigrations(db);
 if (applied.length) console.log(`Applied migrations: ${applied.join(', ')}`);
+await import('sharp'); // fail the deploy now if the image library cannot load, not the first time a picture is cropped
 const app = await buildApp({ db, config, webDir: path.resolve(here, '../../web/dist') });
 
 const port = Number(process.env.PORT ?? 3000);

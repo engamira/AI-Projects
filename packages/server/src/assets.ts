@@ -79,3 +79,32 @@ export async function missingAssets(q: Queryable, ids: string[]): Promise<string
   const found = new Set(r.rows.map((x) => x.id));
   return ids.filter((i) => !found.has(i));
 }
+
+// ---------- Cropped copies ----------
+// "square-240.jpg" is a 240x240 crop; "card-480.jpg" is a 480x360 (4:3) crop. Only these sizes are allowed.
+const VARIANT = /^(square-(120|240|360)|card-(320|480|640))\.jpg$/;
+
+export function parseVariant(name: string): { width: number; height: number } | null {
+  if (!VARIANT.test(name)) return null;
+  const [kind, size] = name.replace('.jpg', '').split('-') as ['square' | 'card', string];
+  const width = Number(size);
+  return { width, height: kind === 'square' ? width : Math.round((width * 3) / 4) };
+}
+
+export async function getVariantFile(q: Queryable, id: string, name: string): Promise<{ mime: string; data: Buffer } | undefined> {
+  const dims = parseVariant(name);
+  if (!dims) return undefined;
+  const cached = await q.query<{ mime: string; data: Buffer }>('SELECT mime, data FROM asset_variant WHERE asset_id = $1 AND variant = $2', [id, name]);
+  if (cached.rows[0]) return cached.rows[0];
+  const original = await q.query<{ data: Buffer }>('SELECT data FROM asset WHERE id = $1 AND workspace_id = $2', [id, DEFAULT_WORKSPACE_ID]);
+  if (!original.rows[0]) return undefined;
+  const sharp = (await import('sharp')).default;
+  const data = await sharp(original.rows[0].data, { limitInputPixels: 40_000_000 })
+    .rotate() // respect the camera's orientation
+    .flatten({ background: '#ffffff' }) // transparent areas become white
+    .resize(dims.width, dims.height, { fit: 'cover', position: sharp.strategy.attention }) // crop around the most interesting part
+    .jpeg({ quality: 85, mozjpeg: true })
+    .toBuffer();
+  await q.query('INSERT INTO asset_variant (asset_id, variant, mime, data) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [id, name, 'image/jpeg', data]);
+  return { mime: 'image/jpeg', data };
+}
