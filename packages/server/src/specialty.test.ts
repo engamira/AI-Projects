@@ -141,3 +141,21 @@ describe('starter layouts', () => {
     expect(lib.filter((d) => d.category === 'shared').length).toBe(8);
   });
 });
+
+describe('stacked columns on a phone', () => {
+  it('Two columns keep a gap under each column so stacked items do not touch, without changing the total spacing', async () => {
+    const two = inst('two_column');
+    const { html } = await renderEmail({ ...emptyContent('cosmetics'), blocks: [two] });
+    // each of the two columns has 24px of space below it
+    expect((html.match(/padding:\s*0 12px 24px/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // the section's own bottom space is reduced by the same amount (default 24 → 0), so desktop spacing is unchanged
+    expect(html).toMatch(/padding:\s*24px 12px 0px/);
+  });
+
+  it('every row of columns keeps a gap under its columns (cards, speakers, benefits, event facts)', async () => {
+    for (const [type, palette] of [['destinations', 'travel'], ['speakers', 'events'], ['benefits', 'cosmetics'], ['products', 'cosmetics']] as const) {
+      const { html } = await renderEmail({ ...emptyContent(palette), blocks: [inst(type)] });
+      expect(html, type).toMatch(/padding:\s*0 12px 16px/);
+    }
+  });
+});

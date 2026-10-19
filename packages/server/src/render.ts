@@ -80,7 +80,9 @@ const RENDERERS: Record<string, (p: Props, ctx: Ctx) => string> = {
       ].join('');
     };
     const py = n(p, 'paddingY');
-    return `<mj-section background-color="${c.surface}" padding="${py}px 12px"><mj-column padding="0 12px">${col('left') || '<mj-spacer height="1px" />'}</mj-column><mj-column padding="0 12px">${col('right') || '<mj-spacer height="1px" />'}</mj-column></mj-section>`;
+    // 24px under each column: when they stack on a phone the two items do not touch (desktop spacing is unchanged)
+    const gap = 24;
+    return `<mj-section background-color="${c.surface}" padding="${py}px 12px ${Math.max(0, py - gap)}px"><mj-column padding="0 12px ${gap}px">${col('left') || '<mj-spacer height="1px" />'}</mj-column><mj-column padding="0 12px ${gap}px">${col('right') || '<mj-spacer height="1px" />'}</mj-column></mj-section>`;
   },
 
   divider: (p, ctx) => `<mj-section background-color="${ctx.c.surface}" padding="0"><mj-column><mj-divider border-color="${ctx.c.divider}" border-width="${n(p, 'thickness')}px" width="${n(p, 'widthPercent')}%" padding="${n(p, 'paddingY')}px 24px" /></mj-column></mj-section>`,
