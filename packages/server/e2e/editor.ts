@@ -240,23 +240,30 @@ try {
   assert((await blocks.count()) === 7, 'a template block can be added');
   ok('a new email can start from the ready-made layout, and only offers its own template blocks');
 
-  // ---- ready-made content for picture-and-text blocks
-  await page.locator('.canvas-block[data-block-type="speakers"]').dispatchEvent('click');
+  // ---- ready-made content for picture-and-text blocks: one drop-down per item
+  const speakersBlock = page.locator('.canvas-block[data-block-type="speakers"]');
+  await speakersBlock.dispatchEvent('click');
   assert((await page.getByLabel('Speaker 1: role', { exact: true }).count()) === 1, 'all fields are shown while the switch is off');
   await page.getByRole('switch', { name: 'Use ready-made content' }).check();
   assert((await page.getByLabel('Speaker 1: role', { exact: true }).count()) === 0, 'word fields are hidden while ready-made content is on');
-  assert((await page.getByText('Speaker 1: photo').count()) > 0, 'pictures can still be chosen');
-  await page.getByLabel('Ready-made content', { exact: true }).selectOption({ label: "Workshop leaders" });
+  assert((await page.getByLabel(/^Ready-made content for Speaker/).count()) === 3, 'one drop-down for each of the 3 speakers');
+  await page.getByLabel('Ready-made content for Speaker 2', { exact: true }).selectOption({ label: 'Omar Khalid (Panel moderator)' });
   await page.getByText('All changes saved').waitFor();
-  await page.locator('.canvas-block[data-block-type="speakers"]').getByText("Workshop leader").first().waitFor();
+  await speakersBlock.getByText('Omar Khalid').waitFor();
+  assert((await speakersBlock.getByText('Omar Khalid').count()) === 1, 'only speaker 2 changed');
+  assert((await speakersBlock.locator('img').count()) >= 1, 'the picture is filled in too');
+  await page.getByLabel('Ready-made content for Speaker 3', { exact: true }).selectOption({ label: 'Mei Tanaka (Founder)' });
+  await page.getByText('All changes saved').waitFor();
+  await speakersBlock.getByText('Mei Tanaka').waitFor();
+  assert((await speakersBlock.getByText('Omar Khalid').count()) === 1, 'choosing speaker 3 left speaker 2 alone');
   await page.getByRole('switch', { name: 'Use ready-made content' }).uncheck();
-  assert((await page.getByLabel('Speaker 1: role', { exact: true }).inputValue()) === "Workshop leader", 'fields keep the ready-made words and can be edited');
+  assert((await page.getByLabel('Speaker 2: name', { exact: true }).inputValue()) === 'Omar Khalid', 'fields keep the ready-made words and can be edited');
   await page.getByRole('button', { name: 'Undo' }).click();
-  await page.locator('.canvas-block[data-block-type="speakers"]').getByText("Role, Company").first().waitFor();
-  assert((await page.locator('.canvas-block[data-block-type="hero"] [data-testid="preset-picker"]').count()) === 0, 'no ready-made option on the hero');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await speakersBlock.getByText('Speaker name').first().waitFor();
   await page.locator('.canvas-block[data-block-type="hero"]').dispatchEvent('click');
   assert((await page.getByTestId('preset-picker').count()) === 0, 'the hero has no ready-made option');
-  ok('ready-made content fills a picture-and-text block in one step, can be undone, and is not offered on the hero');
+  ok('ready-made content: each speaker has its own drop-down that fills name, role, bio and picture; undo works; not offered on the hero');
 
   // ---- live preview beside the canvas
   await page.getByLabel('Live preview', { exact: true }).check();

@@ -1,65 +1,114 @@
-import { describe, expect, it } from 'vitest';
-import { BLOCK_DEFINITIONS, BLOCK_PRESETS, applyPreset, blockDefinition, checkField, createInstance, emptyContent, matchingPreset, presetKeys, validateContent, type PaletteId } from '@cl/shared';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  BLOCK_PRESETS, SAMPLE_ART_KEYS, applyItem, blockDefinition, checkField, createInstance, emptyContent, matchingItem, presetKeys, sampleAssetId, validateContent,
+  type PaletteId,
+} from '@cl/shared';
+import { SAMPLE_ART } from './sampleart.js';
+import { createTestApp, type Client, type TestApp } from './testkit.js';
 
-describe('ready-made content for blocks with text and pictures', () => {
-  it('is offered only for the picture-and-text blocks, never hero, plain text, button, header or footer', () => {
+let t: TestApp;
+let builder: Client;
+beforeAll(async () => {
+  t = await createTestApp();
+  builder = await t.sessionFor(await t.seedUser('builder', { totp: true }));
+});
+afterAll(() => t.close());
+
+describe('ready-made content: one drop-down for each item of a picture-and-text block', () => {
+  it('is offered only for the picture-and-text blocks, never hero, text, button, header or footer', () => {
     expect(Object.keys(BLOCK_PRESETS).sort()).toEqual(['destinations', 'products', 'speakers', 'two_column']);
-    for (const type of Object.keys(BLOCK_PRESETS)) {
-      expect(blockDefinition(type)!.fields.some((f) => f.kind === 'image'), type).toBe(true);
-    }
     for (const type of ['hero', 'text', 'button', 'header', 'footer']) expect(BLOCK_PRESETS[type]).toBeUndefined();
   });
 
-  it('every preset only fills existing text fields with valid values, and never pictures, links or spacing', () => {
-    for (const [type, presets] of Object.entries(BLOCK_PRESETS)) {
+  it('has one drop-down per item: 3 speakers, 3 destinations, 3 products, 2 columns', () => {
+    expect(BLOCK_PRESETS.speakers!.slots.map((s) => s.label)).toEqual(['Speaker 1', 'Speaker 2', 'Speaker 3']);
+    expect(BLOCK_PRESETS.destinations!.slots).toHaveLength(3);
+    expect(BLOCK_PRESETS.products!.slots).toHaveLength(3);
+    expect(BLOCK_PRESETS.two_column!.slots.map((s) => s.label)).toEqual(['Left column', 'Right column']);
+  });
+
+  it('every entry only fills real text and picture fields with valid values, and never links or spacing', () => {
+    for (const [type, b] of Object.entries(BLOCK_PRESETS)) {
       const def = blockDefinition(type)!;
-      expect(presets.length, type).toBeGreaterThanOrEqual(3);
-      expect(new Set(presets.map((p) => p.id)).size).toBe(presets.length);
-      for (const p of presets) {
-        for (const [key, value] of Object.entries(p.props)) {
-          const f = def.fields.find((x) => x.key === key);
-          expect(f, `${type}/${p.id}: ${key} exists`).toBeDefined();
-          expect(['text', 'textarea'], `${type}/${p.id}: ${key}`).toContain(f!.kind);
-          expect(checkField(f!, value), `${type}/${p.id}: ${key}`).toBeNull();
+      const keys = presetKeys(type);
+      for (const k of keys) {
+        const f = def.fields.find((x) => x.key === k);
+        expect(f, `${type}.${k} exists`).toBeDefined();
+        expect(['text', 'textarea', 'image']).toContain(f!.kind);
+      }
+      expect(b.items.length, type).toBeGreaterThanOrEqual(6);
+      const props = createInstance(def).props;
+      for (const slot of b.slots.keys()) {
+        for (const item of b.items) {
+          const next = applyItem(type, props, slot, item.id);
+          for (const k of Object.keys(next)) {
+            if (next[k] === props[k]) continue;
+            const f = def.fields.find((x) => x.key === k)!;
+            expect(checkField(f, next[k]!), `${type}/${item.id}.${k}`).toBeNull();
+          }
         }
       }
     }
   });
 
-  it('applying one fills the words, keeps pictures, links and spacing, and the email stays valid', () => {
-    for (const [type, presets] of Object.entries(BLOCK_PRESETS)) {
+  it('choosing an entry for one item changes only that item; links, spacing and other items stay', () => {
+    for (const [type, b] of Object.entries(BLOCK_PRESETS)) {
       const def = blockDefinition(type)!;
-      const palette = def.category === 'shared' ? 'cosmetics' : (def.category as PaletteId);
-      const block = createInstance(def);
-      const mine = Object.fromEntries(def.fields.filter((f) => f.kind === 'image' || f.kind === 'url' || f.kind === 'number').map((f) => [f.key, f.kind === 'image' ? 'https://example.com/a.png' : block.props[f.key]!]));
-      for (const preset of presets) {
-        const next = applyPreset(type, { ...block.props, ...mine }, preset.id);
-        for (const [k, v] of Object.entries(preset.props)) expect(next[k]).toBe(v);
-        for (const [k, v] of Object.entries(mine)) expect(next[k], `${type}/${preset.id}: ${k} untouched`).toBe(v);
-        expect(matchingPreset(type, next)?.id).toBe(preset.id);
-        const v = validateContent({ ...emptyContent(palette), blocks: [{ ...block, props: next }] });
-        expect(v.ok, `${type}/${preset.id}: ${!v.ok ? v.error : ''}`).toBe(true);
+      const base = createInstance(def).props;
+      const [first, second] = [b.items[0]!, b.items[1]!];
+      const after1 = applyItem(type, base, 0, first.id);
+      const after2 = applyItem(type, after1, 1, second.id);
+      expect(matchingItem(type, 0, after2)?.id).toBe(first.id);
+      expect(matchingItem(type, 1, after2)?.id).toBe(second.id);
+      const mine = presetKeys(type);
+      const slot0 = b.slots[0]!.prefix;
+      for (const [k, v] of Object.entries(after2)) {
+        if (!mine.has(k)) expect(v, `${type}.${k} untouched`).toBe(base[k]);
       }
+      // the third item (or nothing, for two columns) is untouched by choosing for items 1 and 2
+      for (const f of b.fields.map((x) => `${b.slots[2]?.prefix ?? 'zzz'}${x}`)) expect(after2[f]).toBe(base[f]);
+      // the picture comes with the words
+      expect(after1[`${slot0}Image`]).toBe(`asset:${sampleAssetId(first.art)}`);
+      expect(String(after1[`${slot0}ImageAlt`]).length).toBeGreaterThan(3);
     }
   });
 
-  it('picture descriptions follow the new name, but a description someone wrote is kept', () => {
-    const def = blockDefinition('products')!;
-    const base = createInstance(def).props; // c1ImageAlt equals the default name
-    const p = BLOCK_PRESETS.products![1]!;
-    expect(applyPreset('products', base, p.id).c1ImageAlt).toBe(p.props.c1Name);
-    const written = applyPreset('products', { ...base, c1ImageAlt: 'A bottle on a marble shelf' }, p.id);
-    expect(written.c1ImageAlt).toBe('A bottle on a marble shelf');
-    const two = createInstance(blockDefinition('two_column')!).props;
-    const t = BLOCK_PRESETS.two_column![0]!;
-    expect(applyPreset('two_column', { ...two, leftImageAlt: '' }, t.id).leftImageAlt).toBe(t.props.leftHeading);
+  it('the email stays valid with any entry in any slot', () => {
+    for (const [type] of Object.entries(BLOCK_PRESETS)) {
+      const def = blockDefinition(type)!;
+      const palette = def.category === 'shared' ? 'cosmetics' : (def.category as PaletteId);
+      let props = createInstance(def).props;
+      BLOCK_PRESETS[type]!.slots.forEach((_, slot) => { props = applyItem(type, props, slot, BLOCK_PRESETS[type]!.items[slot + 2]!.id); });
+      const v = validateContent({ ...emptyContent(palette), blocks: [{ ...createInstance(def), props }] });
+      expect(v.ok, `${type}: ${!v.ok ? v.error : ''}`).toBe(true);
+    }
   });
 
-  it('presetKeys lists the words that are hidden while ready-made content is on', () => {
-    const keys = presetKeys('two_column');
-    expect(keys.has('leftHeading')).toBe(true);
-    expect(keys.has('leftImage')).toBe(false);
-    expect(keys.has('leftButtonUrl')).toBe(false);
-    expect(BLOCK_DEFINITIONS.length).toBeGreaterThan(0);
+  it('every entry has a drawn picture, with ids that are unique and well-formed', () => {
+    expect(new Set(SAMPLE_ART_KEYS).size).toBe(SAMPLE_ART_KEYS.length);
+    for (const key of SAMPLE_ART_KEYS) {
+      expect(SAMPLE_ART[key], key).toBeDefined();
+      expect(sampleAssetId(key)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+    }
+    expect(new Set(SAMPLE_ART_KEYS.map(sampleAssetId)).size).toBe(SAMPLE_ART_KEYS.length);
+  });
+
+  it('the sample pictures exist in the library, can be used in an email and are served', async () => {
+    const lib = (await builder.get('/api/assets')).body as { id: string; filename: string }[];
+    for (const key of SAMPLE_ART_KEYS) expect(lib.some((a) => a.id === sampleAssetId(key)), key).toBe(true);
+    const c = (await builder.post('/api/campaigns', { name: 'Presets', palette: 'events' })).body;
+    const def = blockDefinition('speakers')!;
+    let props = createInstance(def).props;
+    props = applyItem('speakers', props, 0, 'layla');
+    props = applyItem('speakers', props, 1, 'omar');
+    const res = await builder.put(`/api/campaigns/${c.id}/draft`, { content: { ...c.draft.content, blocks: [{ ...createInstance(def), props }] }, baseVersion: 1 });
+    expect(res.status).toBe(200);
+    const html = (await builder.get(`/api/campaigns/${c.id}/preview`)).body.html as string;
+    expect(html).toContain('Layla Haddad');
+    expect(html).toContain('Omar Khalid');
+    expect(html).toContain(`/media/${sampleAssetId('speakers/layla')}/square-240.jpg`);
+    const img = await t.app.inject({ url: `/media/${sampleAssetId('speakers/layla')}` });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers['content-type']).toBe('image/png');
   });
 });

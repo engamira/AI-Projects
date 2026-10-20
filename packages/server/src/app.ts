@@ -17,6 +17,7 @@ import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { userRoutes } from './routes/users.js';
+import { seedSamplePictures } from './sampleart.js';
 import { Sentry } from './sentry.js';
 
 export type AppOptions = {
@@ -28,6 +29,7 @@ export type AppOptions = {
 };
 
 export async function buildApp({ db, config, webDir, onRoute }: AppOptions): Promise<FastifyInstance> {
+  await seedSamplePictures(db); // built-in pictures for the ready-made content drop-downs
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', trustProxy: true });
   if (onRoute) {
     app.addHook('onRoute', (r) =>

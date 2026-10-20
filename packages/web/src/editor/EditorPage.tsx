@@ -26,8 +26,8 @@ import {
   type EmailSettings,
   type LibraryResponse,
   BLOCK_PRESETS,
-  applyPreset,
-  matchingPreset,
+  applyItem,
+  matchingItem,
   presetKeys,
   type PlaceholderIssue,
   type PreviewResponse,
@@ -148,9 +148,9 @@ function BrandBlock({ kind, profile, settings }: { kind: 'header' | 'footer'; pr
 }
 
 // ---------- Properties ----------
-/** Switch between typing every field and picking ready-made wording from a list. */
-function PresetPicker({ type, props, canEdit, on, onToggle, onChoose }: { type: string; props: BlockInstance['props']; canEdit: boolean; on: boolean; onToggle: (v: boolean) => void; onChoose: (presetId: string) => void }) {
-  const current = matchingPreset(type, props);
+/** Switch between typing every field and picking ready-made content for each item (one drop-down per speaker, card or column). */
+function PresetPicker({ type, props, canEdit, on, onToggle, onChoose }: { type: string; props: BlockInstance['props']; canEdit: boolean; on: boolean; onToggle: (v: boolean) => void; onChoose: (slot: number, itemId: string) => void }) {
+  const block = BLOCK_PRESETS[type]!;
   return (
     <div className="preset-picker" data-testid="preset-picker">
       <label className="check">
@@ -158,13 +158,18 @@ function PresetPicker({ type, props, canEdit, on, onToggle, onChoose }: { type: 
       </label>
       {on ? (
         <>
-          <label>Content
-            <select aria-label="Ready-made content" disabled={!canEdit} value={current?.id ?? ''} onChange={(e) => e.target.value && onChoose(e.target.value)}>
-              <option value="">{current ? '' : '— Choose ready-made content —'}</option>
-              {BLOCK_PRESETS[type]!.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          </label>
-          <p className="muted small">Fills in the words only. Pictures and links stay as you set them. This is sample wording: check names, prices and details before sending. Turn the switch off to edit every field yourself.</p>
+          {block.slots.map((slot, i) => {
+            const current = matchingItem(type, i, props);
+            return (
+              <label key={slot.prefix}>{slot.label}
+                <select aria-label={`Ready-made content for ${slot.label}`} disabled={!canEdit} value={current?.id ?? ''} onChange={(e) => e.target.value && onChoose(i, e.target.value)}>
+                  {!current && <option value="">— Choose —</option>}
+                  {block.items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
+                </select>
+              </label>
+            );
+          })}
+          <p className="muted small">Each choice fills that item's picture and words. Links and spacing are not changed. Names, people and prices are samples: replace them with real details before sending, and swap the sample pictures for your own if you prefer. Turn the switch off to edit every field yourself.</p>
         </>
       ) : (
         <p className="muted small">Off: fill in every field yourself.</p>
@@ -192,7 +197,7 @@ function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
             canEdit={canEdit}
             on={readyMade[block.id] === true}
             onToggle={(v) => setReadyMade((m) => ({ ...m, [block.id]: v }))}
-            onChoose={(presetId) => setProps(block.id, applyPreset(block.type, block.props, presetId))}
+            onChoose={(slot, itemId) => setProps(block.id, applyItem(block.type, block.props, slot, itemId))}
           />
         )}
         <FieldForm
