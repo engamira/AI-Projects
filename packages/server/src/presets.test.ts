@@ -28,8 +28,8 @@ describe('ready-made content: one drop-down for each item of a picture-and-text 
     expect(BLOCK_PRESETS.travel_offer!.slots.map((s) => s.label)).toEqual(['Offer']);
   });
 
-  it('Two columns and Products also fill the button link and its alias; Destinations leave the price (and links) to the Builder', () => {
-    for (const type of ['two_column', 'products']) {
+  it('Two columns, Products and Destinations also fill the button link and its alias; Destinations leave the price to the Builder', () => {
+    for (const type of ['two_column', 'products', 'destinations']) {
       const keys = [...presetKeys(type)];
       expect(keys.some((k) => k.endsWith('ButtonUrl')), type).toBe(true);
       expect(keys.some((k) => k.endsWith('ButtonUrlAlias')), type).toBe(true);
@@ -41,7 +41,6 @@ describe('ready-made content: one drop-down for each item of a picture-and-text 
     }
     const d = presetKeys('destinations');
     expect([...d].some((k) => k.endsWith('Price'))).toBe(false);
-    expect([...d].some((k) => k.includes('Url'))).toBe(false);
     const base = createInstance(blockDefinition('destinations')!).props;
     const next = applyItem('destinations', { ...base, c1Price: 'from AED 1,234' }, 0, 'paris');
     expect(next.c1Price).toBe('from AED 1,234'); // a price the Builder typed survives

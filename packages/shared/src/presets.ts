@@ -38,7 +38,7 @@ export function sampleAssetId(art: string): string {
 const price = 'AED 000';
 const SAMPLE_SITE = 'https://www.example.com'; // placeholder address: replace it with the real link (QA will flag example.com)
 
-const dest = (id: string, name: string, detail: string): ItemPreset => ({ id, label: name, art: `destinations/${id}`, values: { Name: name, Detail: detail, ButtonText: 'Book now', ImageAlt: `Illustration for ${name}` } });
+const dest = (id: string, name: string, detail: string): ItemPreset => ({ id, label: name, art: `destinations/${id}`, values: { Name: name, Detail: detail, ButtonText: 'Book now', ButtonUrl: `${SAMPLE_SITE}/destinations/${id}`, ButtonUrlAlias: `${name} button`, ImageAlt: `Illustration for ${name}` } });
 const product = (id: string, name: string, detail: string): ItemPreset => ({ id, label: name, art: `products/${id}`, values: { Name: name, Detail: detail, Price: price, ButtonText: 'Shop now', ButtonUrl: `${SAMPLE_SITE}/shop/${id}`, ButtonUrlAlias: `${name} button`, ImageAlt: `Illustration of ${name.toLowerCase()}` } });
 const column = (id: string, heading: string, body: string, button: string): ItemPreset => ({ id, label: heading, art: `two_column/${id}`, values: { Heading: heading, Body: body, ButtonText: button, ButtonUrl: `${SAMPLE_SITE}/${id}`, ButtonUrlAlias: `${heading} button`, ImageAlt: `Illustration for ${heading.toLowerCase()}` } });
 const offer = (id: string, eyebrow: string, highlight: string, headline: string, button: string): ItemPreset => ({ id, label: highlight.charAt(0) + highlight.slice(1).toLowerCase(), values: { Eyebrow: eyebrow, Highlight: highlight, Headline: headline, ButtonText: button, ButtonUrl: `${SAMPLE_SITE}/offers/${id}`, ButtonUrlAlias: `${button} (${id.replace(/_/g, ' ')})` } });
@@ -61,7 +61,7 @@ export const BLOCK_PRESETS: Record<string, PresetBlock> = {
   },
   destinations: {
     slots: [1, 2, 3].map((i) => ({ label: `Destination ${i}`, prefix: `c${i}` })),
-    fields: ['Image', 'ImageAlt', 'Name', 'Detail', 'ButtonText'], // the price is typed by the Builder
+    fields: ['Image', 'ImageAlt', 'Name', 'Detail', 'ButtonText', 'ButtonUrl', 'ButtonUrlAlias'], // the price is typed by the Builder
     items: [
       dest('paris', 'Paris', 'Short flights, long weekends'),
       dest('rome', 'Rome', 'History and great food'),
