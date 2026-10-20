@@ -10,16 +10,16 @@ export type ItemPreset = {
   id: string;
   /** Shown in the drop-down. */
   label: string;
-  /** Which illustration to use (one picture per key). */
-  art: string;
+  /** Which illustration to use (one picture per key). Entries without a picture leave it out. */
+  art?: string;
   /** Values for the item's fields, keyed by field suffix (e.g. Name, Detail). The picture is added from `art`. */
   values: Record<string, string>;
 };
 
 export type PresetBlock = {
-  /** The items of the block, each with its own drop-down. `prefix` is the start of its property keys (c1, p2, left). */
+  /** The items of the block, each with its own drop-down. `prefix` is the start of its property keys (c1, p2, left); empty for a block with a single item. */
   slots: { label: string; prefix: string }[];
-  /** Field suffixes a preset fills (the picture and picture description are always included). */
+  /** Field suffixes a preset fills. Fields left out (for example a price) stay visible and are never overwritten. */
   fields: string[];
   items: ItemPreset[];
 };
@@ -36,16 +36,18 @@ export function sampleAssetId(art: string): string {
 }
 
 const price = 'AED 000';
+const SAMPLE_SITE = 'https://www.example.com'; // placeholder address: replace it with the real link (QA will flag example.com)
 
-const dest = (id: string, name: string, detail: string): ItemPreset => ({ id, label: name, art: `destinations/${id}`, values: { Name: name, Detail: detail, Price: `from ${price}`, ButtonText: 'Book now', ImageAlt: `Illustration for ${name}` } });
-const product = (id: string, name: string, detail: string): ItemPreset => ({ id, label: name, art: `products/${id}`, values: { Name: name, Detail: detail, Price: price, ButtonText: 'Shop now', ImageAlt: `Illustration of ${name.toLowerCase()}` } });
-const column = (id: string, heading: string, body: string, button: string): ItemPreset => ({ id, label: heading, art: `two_column/${id}`, values: { Heading: heading, Body: body, ButtonText: button, ImageAlt: `Illustration for ${heading.toLowerCase()}` } });
+const dest = (id: string, name: string, detail: string): ItemPreset => ({ id, label: name, art: `destinations/${id}`, values: { Name: name, Detail: detail, ButtonText: 'Book now', ImageAlt: `Illustration for ${name}` } });
+const product = (id: string, name: string, detail: string): ItemPreset => ({ id, label: name, art: `products/${id}`, values: { Name: name, Detail: detail, Price: price, ButtonText: 'Shop now', ButtonUrl: `${SAMPLE_SITE}/shop/${id}`, ButtonUrlAlias: `${name} button`, ImageAlt: `Illustration of ${name.toLowerCase()}` } });
+const column = (id: string, heading: string, body: string, button: string): ItemPreset => ({ id, label: heading, art: `two_column/${id}`, values: { Heading: heading, Body: body, ButtonText: button, ButtonUrl: `${SAMPLE_SITE}/${id}`, ButtonUrlAlias: `${heading} button`, ImageAlt: `Illustration for ${heading.toLowerCase()}` } });
+const offer = (id: string, eyebrow: string, highlight: string, headline: string, button: string): ItemPreset => ({ id, label: highlight.charAt(0) + highlight.slice(1).toLowerCase(), values: { Eyebrow: eyebrow, Highlight: highlight, Headline: headline, ButtonText: button, ButtonUrl: `${SAMPLE_SITE}/offers/${id}`, ButtonUrlAlias: `${button} (${id.replace(/_/g, ' ')})` } });
 const speaker = (id: string, name: string, role: string, bio: string): ItemPreset => ({ id, label: `${name} (${role.split(',')[0]})`, art: `speakers/${id}`, values: { Name: name, Role: role, Bio: bio, ImageAlt: `Portrait illustration of ${name}` } });
 
 export const BLOCK_PRESETS: Record<string, PresetBlock> = {
   two_column: {
     slots: [{ label: 'Left column', prefix: 'left' }, { label: 'Right column', prefix: 'right' }],
-    fields: ['Image', 'ImageAlt', 'Heading', 'Body', 'ButtonText'],
+    fields: ['Image', 'ImageAlt', 'Heading', 'Body', 'ButtonText', 'ButtonUrl', 'ButtonUrlAlias'],
     items: [
       column('delivery', 'Free delivery', 'On every order over AED 200, straight to your door.', 'Shop now'),
       column('returns', 'Easy returns', 'Changed your mind? Send it back within 30 days.', 'How returns work'),
@@ -59,7 +61,7 @@ export const BLOCK_PRESETS: Record<string, PresetBlock> = {
   },
   destinations: {
     slots: [1, 2, 3].map((i) => ({ label: `Destination ${i}`, prefix: `c${i}` })),
-    fields: ['Image', 'ImageAlt', 'Name', 'Detail', 'Price', 'ButtonText'],
+    fields: ['Image', 'ImageAlt', 'Name', 'Detail', 'ButtonText'], // the price is typed by the Builder
     items: [
       dest('paris', 'Paris', 'Short flights, long weekends'),
       dest('rome', 'Rome', 'History and great food'),
@@ -74,7 +76,7 @@ export const BLOCK_PRESETS: Record<string, PresetBlock> = {
   },
   products: {
     slots: [1, 2, 3].map((i) => ({ label: `Product ${i}`, prefix: `c${i}` })),
-    fields: ['Image', 'ImageAlt', 'Name', 'Detail', 'Price', 'ButtonText'],
+    fields: ['Image', 'ImageAlt', 'Name', 'Detail', 'Price', 'ButtonText', 'ButtonUrl', 'ButtonUrlAlias'],
     items: [
       product('serum', 'Hydrating serum', 'Lightweight daily boost'),
       product('moisturiser', 'Daily moisturiser', 'Soft, comfortable all day'),
@@ -85,6 +87,18 @@ export const BLOCK_PRESETS: Record<string, PresetBlock> = {
       product('shampoo', 'Repair shampoo', 'Cleans and strengthens'),
       product('mist', 'Leave-in mist', 'Shine and frizz control'),
       product('giftset', 'Gift set', 'Three favourites in one box'),
+    ],
+  },
+  travel_offer: {
+    slots: [{ label: 'Offer', prefix: '' }],
+    fields: ['Eyebrow', 'Highlight', 'Headline', 'ButtonText', 'ButtonUrl', 'ButtonUrlAlias'],
+    items: [
+      offer('extra_baggage', 'This week only', 'FREE EXTRA BAGGAGE', 'on every booking over AED 1,500', 'See the offer'),
+      offer('lounge', 'Travel in comfort', 'LOUNGE ACCESS INCLUDED', 'when you book a flexible fare', 'View fares'),
+      offer('seat_choice', 'Booking bonus', 'FREE SEAT SELECTION', 'choose your seat at no extra cost', 'Choose my seat'),
+      offer('flash_sale', 'Flash sale', 'UP TO 20% OFF', 'selected routes, book before the sale ends', 'Shop the sale'),
+      offer('kids', 'Family travel', 'KIDS GO FOR LESS', 'special fares for children on selected flights', 'See family fares'),
+      offer('flexible', 'Peace of mind', 'FREE DATE CHANGES', 'change your dates once, no fee', 'Learn more'),
     ],
   },
   speakers: {
@@ -105,19 +119,21 @@ export const BLOCK_PRESETS: Record<string, PresetBlock> = {
 export const PRESET_TYPES = Object.keys(BLOCK_PRESETS);
 
 /** Every illustration that presets refer to. */
-export const SAMPLE_ART_KEYS: string[] = Object.values(BLOCK_PRESETS).flatMap((b) => b.items.map((i) => i.art));
+export const SAMPLE_ART_KEYS: string[] = Object.values(BLOCK_PRESETS).flatMap((b) => b.items.flatMap((i) => (i.art ? [i.art] : [])));
 
 /** The full property values an entry gives to an item: its words plus the picture. */
 function itemProps(item: ItemPreset, prefix: string): Props {
   const out: Props = {};
-  for (const [suffix, value] of Object.entries({ ...item.values, Image: `asset:${sampleAssetId(item.art)}` })) out[`${prefix}${suffix}`] = value;
+  const all = item.art ? { ...item.values, Image: `asset:${sampleAssetId(item.art)}` } : item.values;
+  // a block with a single item has no prefix, so its keys start with a lowercase letter (eyebrow, buttonUrl)
+  for (const [suffix, value] of Object.entries(all)) out[prefix ? `${prefix}${suffix}` : suffix.charAt(0).toLowerCase() + suffix.slice(1)] = value;
   return out;
 }
 
 /** Property keys filled by presets for a block (hidden while "ready-made content" is on). */
 export function presetKeys(type: string): Set<string> {
   const b = BLOCK_PRESETS[type];
-  return new Set(b ? b.slots.flatMap((s) => b.fields.map((f) => `${s.prefix}${f}`)) : []);
+  return new Set(b ? b.slots.flatMap((s) => b.fields.map((f) => (s.prefix ? `${s.prefix}${f}` : f.charAt(0).toLowerCase() + f.slice(1)))) : []);
 }
 
 /** The entry that currently matches one item of the block, if any. */

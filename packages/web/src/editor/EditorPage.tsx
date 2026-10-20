@@ -153,8 +153,13 @@ function PresetPicker({ type, props, canEdit, on, onToggle, onChoose }: { type: 
   const block = BLOCK_PRESETS[type]!;
   return (
     <div className="preset-picker" data-testid="preset-picker">
-      <label className="check">
-        <input type="checkbox" role="switch" checked={on} disabled={!canEdit} onChange={(e) => onToggle(e.target.checked)} /> Use ready-made content
+      <label className={`switch${on ? ' on' : ''}${canEdit ? '' : ' disabled'}`}>
+        <input type="checkbox" role="switch" checked={on} disabled={!canEdit} onChange={(e) => onToggle(e.target.checked)} />
+        <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+        <span className="switch-text">
+          <strong>Use ready-made content</strong>
+          <small>{on ? 'On: pick for each item below' : 'Off: fill in every field yourself'}</small>
+        </span>
       </label>
       {on ? (
         <>
@@ -171,9 +176,7 @@ function PresetPicker({ type, props, canEdit, on, onToggle, onChoose }: { type: 
           })}
           <p className="muted small">Each choice fills that item's picture and words. Links and spacing are not changed. Names, people and prices are samples: replace them with real details before sending, and swap the sample pictures for your own if you prefer. Turn the switch off to edit every field yourself.</p>
         </>
-      ) : (
-        <p className="muted small">Off: fill in every field yourself.</p>
-      )}
+      ) : null}
     </div>
   );
 }

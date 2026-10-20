@@ -16,7 +16,7 @@ afterAll(() => t.close());
 
 describe('ready-made content: one drop-down for each item of a picture-and-text block', () => {
   it('is offered only for the picture-and-text blocks, never hero, text, button, header or footer', () => {
-    expect(Object.keys(BLOCK_PRESETS).sort()).toEqual(['destinations', 'products', 'speakers', 'two_column']);
+    expect(Object.keys(BLOCK_PRESETS).sort()).toEqual(['destinations', 'products', 'speakers', 'travel_offer', 'two_column']);
     for (const type of ['hero', 'text', 'button', 'header', 'footer']) expect(BLOCK_PRESETS[type]).toBeUndefined();
   });
 
@@ -25,6 +25,39 @@ describe('ready-made content: one drop-down for each item of a picture-and-text 
     expect(BLOCK_PRESETS.destinations!.slots).toHaveLength(3);
     expect(BLOCK_PRESETS.products!.slots).toHaveLength(3);
     expect(BLOCK_PRESETS.two_column!.slots.map((s) => s.label)).toEqual(['Left column', 'Right column']);
+    expect(BLOCK_PRESETS.travel_offer!.slots.map((s) => s.label)).toEqual(['Offer']);
+  });
+
+  it('Two columns and Products also fill the button link and its alias; Destinations leave the price (and links) to the Builder', () => {
+    for (const type of ['two_column', 'products']) {
+      const keys = [...presetKeys(type)];
+      expect(keys.some((k) => k.endsWith('ButtonUrl')), type).toBe(true);
+      expect(keys.some((k) => k.endsWith('ButtonUrlAlias')), type).toBe(true);
+      const def = blockDefinition(type)!;
+      const next = applyItem(type, createInstance(def).props, 0, BLOCK_PRESETS[type]!.items[0]!.id);
+      const prefix = BLOCK_PRESETS[type]!.slots[0]!.prefix;
+      expect(String(next[`${prefix}ButtonUrl`])).toMatch(/^https:\/\//);
+      expect(String(next[`${prefix}ButtonUrlAlias`]).length).toBeGreaterThan(3);
+    }
+    const d = presetKeys('destinations');
+    expect([...d].some((k) => k.endsWith('Price'))).toBe(false);
+    expect([...d].some((k) => k.includes('Url'))).toBe(false);
+    const base = createInstance(blockDefinition('destinations')!).props;
+    const next = applyItem('destinations', { ...base, c1Price: 'from AED 1,234' }, 0, 'paris');
+    expect(next.c1Price).toBe('from AED 1,234'); // a price the Builder typed survives
+    expect(next.c1Name).toBe('Paris');
+  });
+
+  it('Travel offer has one drop-down that fills the whole banner including its button link and alias', () => {
+    const def = blockDefinition('travel_offer')!;
+    const next = applyItem('travel_offer', createInstance(def).props, 0, 'lounge');
+    expect(next.highlight).toBe('LOUNGE ACCESS INCLUDED');
+    expect(next.eyebrow).toBeTruthy();
+    expect(String(next.buttonUrl)).toMatch(/^https:\/\//);
+    expect(next.buttonUrlAlias).toBeTruthy();
+    expect(next.align).toBe('center'); // layout choices are untouched
+    expect(matchingItem('travel_offer', 0, next)?.id).toBe('lounge');
+    expect(presetKeys('travel_offer').has('paddingY')).toBe(false);
   });
 
   it('every entry only fills real text and picture fields with valid values, and never links or spacing', () => {
@@ -34,9 +67,10 @@ describe('ready-made content: one drop-down for each item of a picture-and-text 
       for (const k of keys) {
         const f = def.fields.find((x) => x.key === k);
         expect(f, `${type}.${k} exists`).toBeDefined();
-        expect(['text', 'textarea', 'image']).toContain(f!.kind);
+        expect(['text', 'textarea', 'image', 'url']).toContain(f!.kind);
       }
       expect(b.items.length, type).toBeGreaterThanOrEqual(6);
+      expect(b.slots.length).toBeGreaterThan(0);
       const props = createInstance(def).props;
       for (const slot of b.slots.keys()) {
         for (const item of b.items) {
@@ -59,17 +93,19 @@ describe('ready-made content: one drop-down for each item of a picture-and-text 
       const after1 = applyItem(type, base, 0, first.id);
       const after2 = applyItem(type, after1, 1, second.id);
       expect(matchingItem(type, 0, after2)?.id).toBe(first.id);
-      expect(matchingItem(type, 1, after2)?.id).toBe(second.id);
+      if (b.slots[1]) expect(matchingItem(type, 1, after2)?.id).toBe(second.id);
       const mine = presetKeys(type);
       const slot0 = b.slots[0]!.prefix;
       for (const [k, v] of Object.entries(after2)) {
         if (!mine.has(k)) expect(v, `${type}.${k} untouched`).toBe(base[k]);
       }
-      // the third item (or nothing, for two columns) is untouched by choosing for items 1 and 2
-      for (const f of b.fields.map((x) => `${b.slots[2]?.prefix ?? 'zzz'}${x}`)) expect(after2[f]).toBe(base[f]);
+      // the third item (if there is one) is untouched by choosing for items 1 and 2
+      if (b.slots[2]) for (const f of b.fields.map((x) => `${b.slots[2]!.prefix}${x}`)) expect(after2[f]).toBe(base[f]);
       // the picture comes with the words
-      expect(after1[`${slot0}Image`]).toBe(`asset:${sampleAssetId(first.art)}`);
-      expect(String(after1[`${slot0}ImageAlt`]).length).toBeGreaterThan(3);
+      if (first.art) {
+        expect(after1[`${slot0}Image`]).toBe(`asset:${sampleAssetId(first.art)}`);
+        expect(String(after1[`${slot0}ImageAlt`]).length).toBeGreaterThan(3);
+      }
     }
   });
 
