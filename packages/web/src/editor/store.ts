@@ -40,6 +40,8 @@ type EditorState = {
   duplicateBlock: (id: string) => void;
   deleteBlock: (id: string) => void;
   setProp: (id: string, key: string, value: PropValue) => void;
+  /** Replaces several properties of one block as a single undo step (used by ready-made content). */
+  setProps: (id: string, props: Record<string, PropValue>) => void;
   setSetting: <K extends keyof EmailSettings>(key: K, value: EmailSettings[K]) => void;
   save: () => Promise<void>;
 };
@@ -153,6 +155,11 @@ export const useEditor = create<EditorState>((set, get) => {
     setProp: (id, key, value) => {
       const { content } = get();
       commit({ ...content, blocks: content.blocks.map((b) => (b.id === id ? { ...b, props: { ...b.props, [key]: value } } : b)) }, `${id}:${key}`);
+    },
+
+    setProps: (id, props) => {
+      const { content } = get();
+      commit({ ...content, blocks: content.blocks.map((b) => (b.id === id ? { ...b, props } : b)) });
     },
 
     setSetting: (key, value) => {

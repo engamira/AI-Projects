@@ -119,6 +119,7 @@ export * from './brand.js';
 export * from './templates.js';
 export * from './content.js';
 export * from './personalize.js';
+export * from './presets.js';
 
 import type { BlockDefinition } from './blocks.js';
 import type { EmailContent } from './content.js';

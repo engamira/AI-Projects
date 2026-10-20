@@ -25,6 +25,10 @@ import {
   type CampaignDto,
   type EmailSettings,
   type LibraryResponse,
+  BLOCK_PRESETS,
+  applyPreset,
+  matchingPreset,
+  presetKeys,
   type PlaceholderIssue,
   type PreviewResponse,
   type SampleId,
@@ -144,9 +148,35 @@ function BrandBlock({ kind, profile, settings }: { kind: 'header' | 'footer'; pr
 }
 
 // ---------- Properties ----------
+/** Switch between typing every field and picking ready-made wording from a list. */
+function PresetPicker({ type, props, canEdit, on, onToggle, onChoose }: { type: string; props: BlockInstance['props']; canEdit: boolean; on: boolean; onToggle: (v: boolean) => void; onChoose: (presetId: string) => void }) {
+  const current = matchingPreset(type, props);
+  return (
+    <div className="preset-picker" data-testid="preset-picker">
+      <label className="check">
+        <input type="checkbox" role="switch" checked={on} disabled={!canEdit} onChange={(e) => onToggle(e.target.checked)} /> Use ready-made content
+      </label>
+      {on ? (
+        <>
+          <label>Content
+            <select aria-label="Ready-made content" disabled={!canEdit} value={current?.id ?? ''} onChange={(e) => e.target.value && onChoose(e.target.value)}>
+              <option value="">{current ? '' : '— Choose ready-made content —'}</option>
+              {BLOCK_PRESETS[type]!.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </label>
+          <p className="muted small">Fills in the words only. Pictures and links stay as you set them. This is sample wording: check names, prices and details before sending. Turn the switch off to edit every field yourself.</p>
+        </>
+      ) : (
+        <p className="muted small">Off: fill in every field yourself.</p>
+      )}
+    </div>
+  );
+}
+
 function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
-  const { content, selectedId, setProp, setSetting } = useEditor();
+  const { content, selectedId, setProp, setProps, setSetting } = useEditor();
   const { can } = useSession();
+  const [readyMade, setReadyMade] = useState<Record<string, boolean>>({}); // per block, this session only
   const block = content.blocks.find((b) => b.id === selectedId);
   const canEdit = block?.type === 'custom_html' ? can('html.custom') : canEditBasic;
   const def = block ? blockDefinition(block.type) : undefined;
@@ -155,7 +185,22 @@ function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
       <>
         <h2>{def.label}</h2>
         <p className="muted small">Changes here affect only this block in this email.</p>
-        <FieldForm fields={def.fields} values={block.props} disabled={!canEdit} onChange={(k, v: PropValue) => setProp(block.id, k, v)} />
+        {BLOCK_PRESETS[block.type] && (
+          <PresetPicker
+            type={block.type}
+            props={block.props}
+            canEdit={canEdit}
+            on={readyMade[block.id] === true}
+            onToggle={(v) => setReadyMade((m) => ({ ...m, [block.id]: v }))}
+            onChoose={(presetId) => setProps(block.id, applyPreset(block.type, block.props, presetId))}
+          />
+        )}
+        <FieldForm
+          fields={readyMade[block.id] && BLOCK_PRESETS[block.type] ? def.fields.filter((f) => !presetKeys(block.type).has(f.key)) : def.fields}
+          values={block.props}
+          disabled={!canEdit}
+          onChange={(k, v: PropValue) => setProp(block.id, k, v)}
+        />
       </>
     );
   }
