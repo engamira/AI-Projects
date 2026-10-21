@@ -133,6 +133,18 @@ export const SAMPLE_ART: Record<string, string> = {
   ...Object.fromEntries(Object.entries(SPEAKERS).map(([k, v]) => [`speakers/${k}`, v])),
 };
 
+const SAMPLE_FOLDER = 'Sample pictures';
+
+/** The first time only: put the built-in pictures in their own folder so they do not clutter the library. After that the team may move them freely. */
+async function fileSamplesInFolder(q: Queryable, ids: string[]): Promise<void> {
+  const made = await q.query<{ id: string }>(
+    'INSERT INTO asset_folder (workspace_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id',
+    [DEFAULT_WORKSPACE_ID, SAMPLE_FOLDER],
+  );
+  if (!made.rows[0]) return; // the folder already exists: leave things as the team arranged them
+  await q.query('UPDATE asset SET folder_id = $2 WHERE workspace_id = $1 AND id = ANY($3::uuid[])', [DEFAULT_WORKSPACE_ID, made.rows[0].id, ids]);
+}
+
 let rendered: Map<string, { buf: Buffer; width: number; height: number }> | null = null;
 
 async function renderAll(): Promise<NonNullable<typeof rendered>> {
@@ -156,6 +168,7 @@ async function renderAll(): Promise<NonNullable<typeof rendered>> {
  */
 export async function seedSamplePictures(q: Queryable): Promise<void> {
   const ids = SAMPLE_ART_KEYS.map(sampleAssetId);
+  await fileSamplesInFolder(q, ids);
   const have = await q.query<{ id: string }>('SELECT id FROM asset WHERE workspace_id = $1 AND id = ANY($2::uuid[])', [DEFAULT_WORKSPACE_ID, ids]);
   if (have.rows.length === ids.length) return;
   const known = new Set(have.rows.map((r) => r.id));
@@ -167,8 +180,8 @@ export async function seedSamplePictures(q: Queryable): Promise<void> {
     const { buf, width, height } = all.get(key)!;
     const sha = createHash('sha256').update(buf).digest('hex');
     await q.query(
-      `INSERT INTO asset (id, workspace_id, filename, mime, size_bytes, width, height, sha256, data, created_by, created_at)
-       VALUES ($1, $2, $3, 'image/png', $4, $5, $6, $7, $8, NULL, TIMESTAMPTZ '2000-01-01')
+      `INSERT INTO asset (id, workspace_id, filename, mime, size_bytes, width, height, sha256, data, created_by, created_at, folder_id)
+       VALUES ($1, $2, $3, 'image/png', $4, $5, $6, $7, $8, NULL, TIMESTAMPTZ '2000-01-01', (SELECT id FROM asset_folder WHERE workspace_id = $2 AND name = 'Sample pictures'))
        ON CONFLICT DO NOTHING`,
       [id, DEFAULT_WORKSPACE_ID, `Sample - ${key.replace('/', ' - ')}.png`, buf.length, width, height, sha, buf],
     );

@@ -54,4 +54,9 @@ export type AssetDto = {
   height: number | null;
   createdAt: string;
   createdByName: string | null;
+  /** The folder it is filed in, or null for "No folder". */
+  folderId: string | null;
 };
+
+export type AssetFolderDto = { id: string; name: string; count: number };
+export const ASSET_FOLDER_NAME_MAX = 60;

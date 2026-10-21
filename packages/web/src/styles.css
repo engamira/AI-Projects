@@ -279,3 +279,16 @@ ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .frame-chrome i:nth-child(3) { background: #5cc16e; }
 .frame-url { margin-left: 10px; flex: 1; max-width: 420px; background: #fff; color: #5b6676; border-radius: 6px; padding: 3px 12px; font-size: 0.8rem; }
 .frame-desktop .device-screen { overflow: auto; background: #fff; }
+
+/* Picture folders */
+.folder-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.folder-chip { border-radius: 999px; padding: 6px 12px; border: 1px solid var(--border); background: var(--surface); color: inherit; cursor: pointer; font-size: 0.9rem; }
+.folder-chip .count { display: inline-block; min-width: 1.4em; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--border); font-size: 0.75rem; text-align: center; }
+.folder-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.folder-chip.active .count { background: rgba(255, 255, 255, 0.28); }
+.folder-new { border-style: dashed; color: var(--muted); }
+.folder-form { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.folder-form input { width: 200px; }
+.folder-actions { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.asset-move { display: block; margin: 6px 0; }
+.asset-move select { width: 100%; margin-top: 2px; }

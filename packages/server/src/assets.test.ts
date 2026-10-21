@@ -190,3 +190,60 @@ describe('cropped copies for round and equal-size pictures', () => {
     expect(((await builder.get(`/api/campaigns/${cosmetics.id}/preview`)).body.html as string)).toContain(`/media/${asset.id}/card-480.jpg`);
   });
 });
+
+describe('picture folders', () => {
+  const mkPng = async (n: number) => sharp({ create: { width: 2 + n, height: 2, channels: 3, background: { r: n * 40, g: 90, b: 160 } } }).png().toBuffer();
+  const folders = async () => (await builder.get('/api/asset-folders')).body as { id: string; name: string; count: number }[];
+
+  it('a folder can be created, with whitespace tidied; empty, too long and repeated names are refused', async () => {
+    const f = await builder.post('/api/asset-folders', { name: '  Summer   2026 ' });
+    expect(f.status).toBe(201);
+    expect(f.body.name).toBe('Summer 2026');
+    expect((await builder.post('/api/asset-folders', { name: '   ' })).status).toBe(400);
+    expect((await builder.post('/api/asset-folders', { name: 'x'.repeat(61) })).status).toBe(400);
+    const dup = await admin.post('/api/asset-folders', { name: 'summer 2026' });
+    expect(dup.status).toBe(400);
+    expect(dup.body.message).toContain('already exists');
+  });
+
+  it('pictures can be uploaded into a folder, moved between folders and back to "No folder"', async () => {
+    const a = (await builder.post('/api/asset-folders', { name: 'Logos' })).body;
+    const b = (await builder.post('/api/asset-folders', { name: 'Banners' })).body;
+    const up = await builder.upload(`/api/assets?folder=${a.id}`, 'logo.png', await mkPng(1));
+    expect(up.body.folderId).toBe(a.id);
+    const loose = await builder.upload('/api/assets', 'loose.png', await mkPng(2));
+    expect(loose.body.folderId).toBeNull();
+    expect((await builder.patch(`/api/assets/${up.body.id}/folder`, { folderId: b.id })).status).toBe(200);
+    expect(((await builder.get('/api/assets')).body as { id: string; folderId: string | null }[]).find((x) => x.id === up.body.id)?.folderId).toBe(b.id);
+    expect((await folders()).find((x) => x.id === b.id)?.count).toBe(1);
+    expect((await admin.patch(`/api/assets/${up.body.id}/folder`, { folderId: null })).status).toBe(200);
+    expect((await folders()).find((x) => x.id === b.id)?.count).toBe(0);
+    // unknown folder or picture
+    expect((await builder.patch(`/api/assets/${loose.body.id}/folder`, { folderId: '00000000-0000-4000-8000-00000000dead' })).status).toBe(404);
+    expect((await builder.patch('/api/assets/00000000-0000-4000-8000-00000000dead/folder', { folderId: null })).status).toBe(404);
+    expect((await builder.upload('/api/assets?folder=00000000-0000-4000-8000-00000000dead', 'x.png', await mkPng(3))).status).toBe(404);
+  });
+
+  it('renaming works, a name that is taken is refused; deleting a folder keeps its pictures', async () => {
+    const f = (await builder.post('/api/asset-folders', { name: 'Old name' })).body;
+    (await builder.post('/api/asset-folders', { name: 'Taken' }));
+    expect((await builder.patch(`/api/asset-folders/${f.id}`, { name: 'Taken' })).status).toBe(400);
+    expect((await builder.patch(`/api/asset-folders/${f.id}`, { name: 'New name' })).body.name).toBe('New name');
+    const up = await builder.upload(`/api/assets?folder=${f.id}`, 'keep.png', await mkPng(4));
+    expect((await builder.delete(`/api/asset-folders/${f.id}`)).status).toBe(204);
+    expect((await builder.delete(`/api/asset-folders/${f.id}`)).status).toBe(404);
+    const after = ((await builder.get('/api/assets')).body as { id: string; folderId: string | null }[]).find((x) => x.id === up.body.id);
+    expect(after).toBeDefined();
+    expect(after!.folderId).toBeNull();
+    expect((await builder.get(`/media/${up.body.id}`)).status).toBe(200); // the picture itself still works
+  });
+
+  it('the built-in sample pictures are filed in their own folder, and a QA reviewer cannot touch folders', async () => {
+    const sample = (await folders()).find((x) => x.name === 'Sample pictures');
+    expect(sample?.count).toBeGreaterThanOrEqual(30);
+    const qa = await t.sessionFor(await t.seedUser('qa_reviewer', { totp: true }));
+    expect((await qa.get('/api/asset-folders')).status).toBe(403);
+    expect((await qa.post('/api/asset-folders', { name: 'Nope' })).status).toBe(403);
+    expect((await qa.delete(`/api/asset-folders/${sample!.id}`)).status).toBe(403);
+  });
+});

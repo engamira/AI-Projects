@@ -123,6 +123,31 @@ try {
   await a.getByText('this picture could not be read').waitFor({ state: 'detached', timeout: 500 }).catch(() => undefined);
   ok('the Pictures page lists the uploaded logos');
 
+  // ---- folders: create, move a picture in, filter, upload into it, delete (pictures survive)
+  await a.getByRole('button', { name: '＋ New folder' }).click();
+  await a.getByLabel('New folder name').fill('E2E logos');
+  await a.getByRole('button', { name: 'Create' }).click();
+  const folderTab = a.getByRole('tab', { name: /E2E logos/ });
+  await folderTab.waitFor();
+  assert((await folderTab.getAttribute('aria-selected')) === 'true', 'the new folder opens');
+  await a.getByText(/No pictures here yet/).waitFor();
+  await a.getByRole('tab', { name: /^No folder/ }).click();
+  const loose = a.locator('.asset-grid li').first();
+  const looseName = await loose.locator('.asset-name').innerText();
+  await loose.getByLabel(/^Folder for/).selectOption({ label: 'E2E logos' });
+  await a.getByRole('tab', { name: /E2E logos 1/ }).waitFor();
+  await a.getByRole('tab', { name: /E2E logos/ }).click();
+  assert((await a.locator('.asset-grid li').count()) === 1, 'the folder shows only its own picture');
+  assert((await a.locator('.asset-grid li .asset-name').first().innerText()) === looseName, 'the moved picture is the one in the folder');
+  await a.locator('input[type="file"]').setInputFiles({ name: 'in-folder.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
+  await a.getByRole('tab', { name: /E2E logos 2/ }).waitFor();
+  a.once('dialog', (d) => void d.accept());
+  await a.getByRole('button', { name: 'Delete folder' }).click();
+  await a.getByRole('tab', { name: /E2E logos/ }).waitFor({ state: 'detached' });
+  await a.getByRole('tab', { name: /^All pictures/ }).click();
+  assert((await a.locator('.asset-grid li .asset-name', { hasText: 'in-folder.png' }).count()) === 1, 'deleting a folder keeps its pictures');
+  ok('folders: create, move a picture in, upload into a folder, delete the folder without losing pictures');
+
   // ---- a bad file is refused with a clear message
   await a.locator('input[type="file"]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not a picture') });
   await a.getByText(/Only PNG, JPG, GIF and WebP/).waitFor();
