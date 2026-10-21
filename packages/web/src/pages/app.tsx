@@ -76,7 +76,17 @@ function Topbar() {
   const { me, can, signOut } = useSession();
   return (
       <header className="topbar">
-        <span className="brand">Campaign LEGO</span>
+        <NavLink to="/" end className="brand" aria-label="Campaign LEGO, home">
+          <svg className="brand-mark" viewBox="0 0 48 40" width="44" height="37" aria-hidden="true" focusable="false">
+            <rect x="4" y="14" width="40" height="22" rx="4" fill="currentColor" opacity="0.95" />
+            <rect x="9" y="6" width="9" height="9" rx="2.5" fill="currentColor" />
+            <rect x="19.5" y="6" width="9" height="9" rx="2.5" fill="currentColor" />
+            <rect x="30" y="6" width="9" height="9" rx="2.5" fill="currentColor" />
+            <path d="M12 25 H36" stroke="var(--topbar-bg)" stroke-width="3" stroke-linecap="round" />
+            <path d="M12 25 l5 -5 M12 25 l5 5" stroke="var(--topbar-bg)" stroke-width="3" stroke-linecap="round" fill="none" />
+          </svg>
+          <span className="brand-word"><span className="brand-top">Campaign</span><span className="brand-bottom">LEGO</span></span>
+        </NavLink>
         <nav aria-label="Main">
           <NavLink to="/" end>Campaigns</NavLink>
           {can('assets.manage') && <NavLink to="/assets">Pictures</NavLink>}
