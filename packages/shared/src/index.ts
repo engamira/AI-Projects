@@ -20,6 +20,7 @@ export const CAPABILITIES = [
   'campaign.view',
   'campaign.edit',
   'campaign.submit',
+  'campaign.delete',
   'campaign.test_send',
   'campaign.send',
   'qa.review',
@@ -28,8 +29,8 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
-  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'assets.manage', 'campaign.view', 'campaign.test_send', 'campaign.send'],
-  builder: ['assets.manage', 'campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.test_send', 'campaign.send'],
+  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'assets.manage', 'campaign.view', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
+  builder: ['assets.manage', 'campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
   qa_reviewer: ['campaign.view', 'qa.review', 'qa.approve'],
 };
 

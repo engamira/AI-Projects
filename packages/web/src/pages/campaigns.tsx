@@ -80,7 +80,7 @@ export function CampaignsPage() {
                   <td>
                     <Link to={`/campaigns/${c.id}`}>{can('campaign.edit') ? 'Open' : 'View'}</Link>
                     {can('campaign.edit') && <button className="link" onClick={() => void duplicate(c.id)}>Duplicate</button>}
-                    {can('campaign.edit') && campaignStatus(c.status).deletable && <button className="link danger" aria-label={`Delete ${c.name}`} onClick={() => void remove(c)}>Delete</button>}
+                    {can('campaign.delete') && campaignStatus(c.status).deletable && <button className="link danger" aria-label={`Delete ${c.name}`} onClick={() => void remove(c)}>Delete</button>}
                   </td>
                 </tr>
               ))}

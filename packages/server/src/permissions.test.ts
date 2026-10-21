@@ -22,14 +22,14 @@ const apiRoutes = () =>
 describe('role definitions match the agreed specification', () => {
   const caps = (role: Role) => new Set(ROLE_CAPABILITIES[role]);
   it('Builder can edit, submit, test send and send, but never review or approve', () => {
-    for (const c of ['campaign.edit', 'campaign.submit', 'campaign.test_send', 'campaign.send'] as const) expect(caps('builder').has(c)).toBe(true);
+    for (const c of ['campaign.edit', 'campaign.submit', 'campaign.delete', 'campaign.test_send', 'campaign.send'] as const) expect(caps('builder').has(c)).toBe(true);
     for (const c of ['qa.review', 'qa.approve', 'users.manage'] as const) expect(caps('builder').has(c)).toBe(false);
   });
   it('QA reviewer can review and approve, but cannot edit, submit or send', () => {
     expect([...caps('qa_reviewer')].sort()).toEqual(['campaign.view', 'qa.approve', 'qa.review']);
   });
   it('Admin manages the workspace and can send, but has no review/approval or normal editing capability', () => {
-    for (const c of ['users.manage', 'campaign.send', 'html.custom', 'brand.manage', 'rules.manage'] as const) expect(caps('admin').has(c)).toBe(true);
+    for (const c of ['users.manage', 'campaign.send', 'campaign.delete', 'html.custom', 'brand.manage', 'rules.manage'] as const) expect(caps('admin').has(c)).toBe(true);
     for (const c of ['qa.review', 'qa.approve', 'campaign.edit', 'campaign.submit'] as const) expect(caps('admin').has(c)).toBe(false);
   });
   it('every capability is granted to at least one role', () => {

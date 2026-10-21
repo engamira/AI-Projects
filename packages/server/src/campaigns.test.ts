@@ -484,11 +484,12 @@ describe('deleting a campaign and showing its status', () => {
     expect(items.some((x) => x.action === 'campaign.deleted' && x.details.name === 'Delete me')).toBe(true);
   });
 
-  it('only a Builder can delete; Admin and QA reviewer are refused and the campaign stays', async () => {
+  it('Builder and Admin can delete; a QA reviewer is refused and the campaign stays', async () => {
     const c = (await b.post('/api/campaigns', { name: 'Keep me', palette: 'travel' })).body;
-    expect((await a.delete(`/api/campaigns/${c.id}`)).status).toBe(403);
     expect((await q.delete(`/api/campaigns/${c.id}`)).status).toBe(403);
     expect((await b.get(`/api/campaigns/${c.id}`)).status).toBe(200);
+    expect((await a.delete(`/api/campaigns/${c.id}`)).status).toBe(204);
+    expect((await b.get(`/api/campaigns/${c.id}`)).status).toBe(404);
   });
 
   it('a campaign that is in QA, approved or sent cannot be deleted', async () => {

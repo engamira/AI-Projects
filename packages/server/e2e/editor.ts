@@ -25,14 +25,23 @@ function assert(cond: unknown, msg: string): asserts cond {
 const shot = async (page: Page, name: string) => { if (shots) await page.screenshot({ path: path.join(shots, name), fullPage: false }); };
 
 async function drag(page: Page, from: Locator, to: Locator) {
+  // Let the page settle first: an autosave or a list re-render in the middle of a drag moves things under the pointer.
+  await page.getByText('All changes saved').waitFor();
   await from.scrollIntoViewIfNeeded();
   await to.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(250);
   const a = (await from.boundingBox())!;
-  const b = (await to.boundingBox())!;
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
   await page.mouse.down();
   await page.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 12, { steps: 5 });
-  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 20 });
+  // measure the target again once the drag has started (the layout can shift when the drag overlay appears)
+  await page.waitForTimeout(150);
+  const b = (await to.boundingBox())!;
+  const x = b.x + b.width / 2;
+  const y = b.y + b.height / 2;
+  await page.mouse.move(x, y, { steps: 20 });
+  await page.mouse.move(x + 1, y + 1, { steps: 2 });
+  await page.waitForTimeout(150); // let the drop target register before releasing
   await page.mouse.up();
 }
 

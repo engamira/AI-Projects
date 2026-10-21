@@ -54,6 +54,7 @@ const emptyDoc = (): EmailContent => ({
 });
 
 export const useEditor = create<EditorState>((set, get) => {
+  let running: Promise<void> | null = null;
   /** Applies a change as one undo step (or merges it with the previous step when `key` repeats quickly). */
   function commit(next: EmailContent, key?: string) {
     const s = get();
@@ -170,27 +171,40 @@ export const useEditor = create<EditorState>((set, get) => {
       commit({ ...content, settings: { ...content.settings, [key]: value } }, `settings:${key}`);
     },
 
-    save: async () => {
-      const s = get();
-      if (!s.campaignId || s.saveState === 'conflict') return;
-      const sent = s.content;
-      const check = validateContent(sent);
-      if (!check.ok) {
-        set({ saveState: 'invalid', message: check.error });
-        return;
-      }
-      set({ saveState: 'saving', message: '' });
-      try {
-        const r = await api<SaveDraftResponse>('PUT', `/api/campaigns/${s.campaignId}/draft`, { content: sent, baseVersion: s.version });
-        // If the user kept editing while this request was in flight, stay "dirty" so the newer content is saved next.
-        set((cur) => ({ version: r.version, saveState: cur.content === sent ? 'saved' : 'dirty' }));
-      } catch (e) {
-        if (e instanceof ApiError && e.code === 'version_conflict') set({ saveState: 'conflict', message: e.message });
-        else if (e instanceof ApiError && e.status === 400) set({ saveState: 'invalid', message: e.message });
-        else set({ saveState: 'error', message: 'Could not save. Check your connection; we will keep trying.' });
-      }
+    save: () => {
+      // One save at a time. A second request with the same base version would be refused as a conflict, so
+      // edits made while a save is in flight are saved right after it finishes (the loop below).
+      if (running) return running;
+      running = (async () => {
+        for (let i = 0; i < 5; i++) {
+          await saveOnce();
+          if (get().saveState !== 'dirty') break;
+        }
+      })().finally(() => { running = null; });
+      return running;
     },
   };
+
+  async function saveOnce(): Promise<void> {
+    const s = get();
+    if (!s.campaignId || s.saveState === 'conflict') return;
+    const sent = s.content;
+    const check = validateContent(sent);
+    if (!check.ok) {
+      set({ saveState: 'invalid', message: check.error });
+      return;
+    }
+    set({ saveState: 'saving', message: '' });
+    try {
+      const r = await api<SaveDraftResponse>('PUT', `/api/campaigns/${s.campaignId}/draft`, { content: sent, baseVersion: s.version });
+      // If the user kept editing while this request was in flight, stay "dirty" so the newer content is saved next.
+      set((cur) => ({ version: r.version, saveState: cur.content === sent ? 'saved' : 'dirty' }));
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'version_conflict') set({ saveState: 'conflict', message: e.message });
+      else if (e instanceof ApiError && e.status === 400) set({ saveState: 'invalid', message: e.message });
+      else set({ saveState: 'error', message: 'Could not save. Check your connection; we will keep trying.' });
+    }
+  }
 });
 
 /** Saves now if there are unsaved changes (used before previewing, saving a version or restoring). */
@@ -199,8 +213,7 @@ export async function flushSave(): Promise<boolean> {
     const s = useEditor.getState();
     if (s.saveState === 'saved') return true;
     if (s.saveState === 'conflict' || s.saveState === 'invalid') return false;
-    if (s.saveState !== 'saving') await s.save();
-    else await new Promise((r) => setTimeout(r, 200));
+    await s.save(); // joins a save already in progress, or starts one
   }
   return useEditor.getState().saveState === 'saved';
 }

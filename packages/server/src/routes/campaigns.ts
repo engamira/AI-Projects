@@ -121,7 +121,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
 
   // Deleting removes the campaign and its saved versions for good. Only campaigns that have not been through review
   // (draft) or were sent back for changes can be deleted; the activity history keeps a record that it happened.
-  app.delete<{ Params: { id: string } }>('/api/campaigns/:id', { config: { access: 'campaign.edit' } }, async (req, reply) => {
+  app.delete<{ Params: { id: string } }>('/api/campaigns/:id', { config: { access: 'campaign.delete' } }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const userId = req.auth!.user.id;
     const result = await withTransaction(db, async (q) => {
