@@ -558,7 +558,11 @@ export function EditorPage() {
           </>
         )}
         {tab === 'edit' && (
-          <label className="small"><input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Live preview</label>
+          <label className={`switch switch-small${live ? ' on' : ''}`} title="Show the real email next to the editor while you work">
+            <input type="checkbox" role="switch" checked={live} onChange={(e) => setLive(e.target.checked)} />
+            <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+            <span className="switch-text"><strong>Live preview</strong></span>
+          </label>
         )}
         <div role="tablist" className="tabs">
           {(['edit', 'preview', 'versions'] as const).map((t) => (
