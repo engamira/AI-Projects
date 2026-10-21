@@ -58,7 +58,14 @@ export function CampaignsPage() {
             </div>
             <div style={{ flex: '0 0 auto' }}><button className="primary">Create and open</button></div>
           </form>
-          <label className="check-inline"><input type="checkbox" checked={starter} onChange={(e) => setStarter(e.target.checked)} /> Start from the ready-made {PALETTES[palette].label} layout</label>
+          <label className={`switch${starter ? ' on' : ''}`} style={{ margin: '12px 0 8px' }}>
+            <input type="checkbox" role="switch" checked={starter} onChange={(e) => setStarter(e.target.checked)} />
+            <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+            <span className="switch-text">
+              <strong>Start from the ready-made {PALETTES[palette].label} layout</strong>
+              <small>{starter ? 'On: the email opens with a ready-made layout to edit' : 'Off: the email opens empty'}</small>
+            </span>
+          </label>
           <p className="muted small" style={{ marginBottom: 0 }}>Colors are set by the template you choose and cannot be changed later. Every block in a starter layout is your own copy to edit, replace or delete.</p>
         </div>
       )}
