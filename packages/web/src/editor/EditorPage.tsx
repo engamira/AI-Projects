@@ -26,6 +26,7 @@ import {
   type EmailSettings,
   type LibraryResponse,
   BLOCK_PRESETS,
+  campaignStatus,
   applyItem,
   matchingItem,
   presetKeys,
@@ -545,6 +546,7 @@ export function EditorPage() {
           onChange={(e) => s.setName(e.target.value)}
           onBlur={() => canEdit && void rename()}
         />
+        <span className={`badge status-${campaignStatus(s.status).tone}`} title={campaignStatus(s.status).hint}>{campaignStatus(s.status).label}</span>
         {!canAny && <span className="badge">View only</span>}
         {canAny && !canEdit && <span className="badge">Custom HTML only</span>}
         <span className={`save-state ${s.saveState}`} role="status" aria-live="polite">{STATUS[s.saveState]}</span>

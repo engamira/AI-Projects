@@ -19,6 +19,7 @@ const COALESCE_MS = 1000; // typing in the same field within a second is one und
 
 type EditorState = {
   campaignId: string | null;
+  status: string;
   name: string;
   content: EmailContent;
   version: number;
@@ -71,6 +72,7 @@ export const useEditor = create<EditorState>((set, get) => {
 
   return {
     campaignId: null,
+    status: 'draft',
     name: '',
     content: emptyDoc(),
     version: 0,
@@ -85,6 +87,7 @@ export const useEditor = create<EditorState>((set, get) => {
     load: (dto) =>
       set({
         campaignId: dto.id,
+        status: dto.status,
         name: dto.name,
         content: dto.draft.content,
         version: dto.draft.version,

@@ -6,6 +6,7 @@ import {
   collectAssetIds,
   PALETTE_IDS,
   SAMPLE_RECIPIENTS,
+  campaignStatus,
   emptyContent,
   normalizeContent,
   starterContent,
@@ -116,6 +117,24 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       id: x.id, name: x.name, status: x.status, createdByName: x.created_by_name,
       updatedAt: x.updated_at.toISOString(), revisionCount: Number(x.revision_count),
     }));
+  });
+
+  // Deleting removes the campaign and its saved versions for good. Only campaigns that have not been through review
+  // (draft) or were sent back for changes can be deleted; the activity history keeps a record that it happened.
+  app.delete<{ Params: { id: string } }>('/api/campaigns/:id', { config: { access: 'campaign.edit' } }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const userId = req.auth!.user.id;
+    const result = await withTransaction(db, async (q) => {
+      const c = await getCampaign(q, id, true);
+      if (!c) return { kind: 'missing' as const };
+      if (!campaignStatus(c.status).deletable) return { kind: 'locked' as const, status: c.status };
+      await q.query('DELETE FROM campaign WHERE id = $1 AND workspace_id = $2', [id, DEFAULT_WORKSPACE_ID]);
+      await logActivity(q, { actorId: userId, action: 'campaign.deleted', entityType: 'campaign', entityId: id, details: { name: c.name, status: c.status } });
+      return { kind: 'ok' as const };
+    });
+    if (result.kind === 'missing') return notFound(reply);
+    if (result.kind === 'locked') return reply.status(409).send({ error: 'not_deletable', message: `A campaign that is "${campaignStatus(result.status).label}" cannot be deleted.` });
+    return reply.status(204).send();
   });
 
   app.post('/api/campaigns', { config: { access: 'campaign.edit' } }, async (req, reply) => {

@@ -42,6 +42,7 @@ export class Client {
   post = (url: string, body?: unknown, headers?: Record<string, string>) => this.request('POST', url, body, headers);
   patch = (url: string, body?: unknown) => this.request('PATCH', url, body);
   put = (url: string, body?: unknown) => this.request('PUT', url, body);
+  delete = (url: string) => this.request('DELETE', url);
 
   /** Uploads one file as a multipart form, like the browser does. */
   async upload(url: string, filename: string, data: Buffer, mime = 'image/png'): Promise<Res> {

@@ -110,6 +110,9 @@ table { width: 100%; border-collapse: collapse; background: var(--surface); bord
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
 .table-scroll { overflow-x: auto; }
+.badge.status-info { border-color: #3f6fd6; color: #3f6fd6; }
+.badge.status-warn { border-color: #c77700; color: #c77700; }
+.badge.status-good { border-color: #2a8a5a; color: #2a8a5a; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.8rem; border: 1px solid var(--border); }
 .bell { position: relative; }
 .bell .count {

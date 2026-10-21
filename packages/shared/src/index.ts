@@ -117,6 +117,7 @@ export * from './blocks.js';
 export * from './palettes.js';
 export * from './brand.js';
 export * from './templates.js';
+export * from './status.js';
 export * from './content.js';
 export * from './personalize.js';
 export * from './presets.js';

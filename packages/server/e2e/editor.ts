@@ -330,6 +330,24 @@ try {
   assert(!(await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), 'no horizontal scroll on a phone');
   ok('campaign list fits a phone screen');
 
+  // ---- campaign list: status shown, delete with confirmation
+  {
+    const { page: lp } = await openAs(browser, 'builder');
+    await lp.goto(`${BASE}/`);
+    const row = lp.locator('tr', { hasText: 'Copy of E2E summer sale' });
+    await row.waitFor();
+    assert((await row.locator('.badge').first().innerText()) === 'Draft', 'the list shows the status in plain words');
+    let asked = '';
+    lp.once('dialog', async (d) => { asked = d.message(); await d.dismiss(); });
+    await row.getByRole('button', { name: /^Delete/ }).click();
+    assert(asked.includes('Copy of E2E summer sale') && (await row.count()) === 1, 'cancelling the confirmation keeps the campaign');
+    lp.once('dialog', (d) => void d.accept());
+    await row.getByRole('button', { name: /^Delete/ }).click();
+    await row.waitFor({ state: 'detached' });
+    assert((await lp.locator('tr', { hasText: 'E2E summer sale' }).count()) === 1, 'only the chosen campaign was deleted');
+  }
+  ok('the list shows each campaign status, and a draft can be deleted after confirming');
+
   console.log(`\n${passed} editor checks passed`);
 } catch (err) {
   console.error(err);

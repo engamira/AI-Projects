@@ -451,3 +451,54 @@ describe('email HTML', () => {
     expect(canonicalJson(content)).toBe(canonicalJson({ blocks: content.blocks, settings: content.settings, schemaVersion: 1 }));
   });
 });
+
+describe('deleting a campaign and showing its status', () => {
+  let t2: TestApp;
+  let b: Client;
+  let a: Client;
+  let q: Client;
+  beforeAll(async () => {
+    t2 = await createTestApp();
+    b = await t2.sessionFor(await t2.seedUser('builder', { totp: true }));
+    a = await t2.sessionFor(await t2.seedUser('admin', { totp: true }));
+    q = await t2.sessionFor(await t2.seedUser('qa_reviewer', { totp: true }));
+  });
+  afterAll(() => t2.close());
+
+  it('the list reports each campaign status', async () => {
+    const c = (await b.post('/api/campaigns', { name: 'Status check', palette: 'travel' })).body;
+    expect(c.status).toBe('draft');
+    const row = ((await b.get('/api/campaigns')).body as { id: string; status: string }[]).find((x) => x.id === c.id);
+    expect(row?.status).toBe('draft');
+  });
+
+  it('a Builder can delete a draft; its versions go too and the activity history keeps a record', async () => {
+    const c = (await b.post('/api/campaigns', { name: 'Delete me', palette: 'events' })).body;
+    await b.post(`/api/campaigns/${c.id}/revisions`, { label: 'one' });
+    expect((await b.delete(`/api/campaigns/${c.id}`)).status).toBe(204);
+    expect((await b.get(`/api/campaigns/${c.id}`)).status).toBe(404);
+    expect((await b.get(`/api/campaigns/${c.id}/revisions`)).status).toBe(404);
+    expect((await b.delete(`/api/campaigns/${c.id}`)).status).toBe(404);
+    const log = (await a.get('/api/activity')).body as { items?: { action: string; details: { name?: string } }[] } | { action: string; details: { name?: string } }[];
+    const items = Array.isArray(log) ? log : log.items ?? [];
+    expect(items.some((x) => x.action === 'campaign.deleted' && x.details.name === 'Delete me')).toBe(true);
+  });
+
+  it('only a Builder can delete; Admin and QA reviewer are refused and the campaign stays', async () => {
+    const c = (await b.post('/api/campaigns', { name: 'Keep me', palette: 'travel' })).body;
+    expect((await a.delete(`/api/campaigns/${c.id}`)).status).toBe(403);
+    expect((await q.delete(`/api/campaigns/${c.id}`)).status).toBe(403);
+    expect((await b.get(`/api/campaigns/${c.id}`)).status).toBe(200);
+  });
+
+  it('a campaign that is in QA, approved or sent cannot be deleted', async () => {
+    for (const status of ['submitted', 'in_review', 'approved', 'sending', 'sent']) {
+      const c = (await b.post('/api/campaigns', { name: `Locked ${status}`, palette: 'travel' })).body;
+      await t2.db.query('UPDATE campaign SET status = $2 WHERE id = $1', [c.id, status]);
+      const res = await b.delete(`/api/campaigns/${c.id}`);
+      expect(res.status, status).toBe(409);
+      expect(res.body.error).toBe('not_deletable');
+      expect((await b.get(`/api/campaigns/${c.id}`)).status).toBe(200);
+    }
+  });
+});

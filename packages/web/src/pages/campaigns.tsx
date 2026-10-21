@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { PALETTES, PALETTE_IDS, type CampaignDto, type CampaignSummary, type PaletteId } from '@cl/shared';
+import { PALETTES, PALETTE_IDS, campaignStatus, type CampaignDto, type CampaignSummary, type PaletteId } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
 
@@ -29,6 +29,15 @@ export function CampaignsPage() {
     try {
       const c = await api<CampaignDto>('POST', `/api/campaigns/${id}/duplicate`);
       nav(`/campaigns/${c.id}`);
+    } catch (err) { setError(errorText(err)); }
+  }
+
+  async function remove(c: CampaignSummary) {
+    if (!window.confirm(`Delete "${c.name}" and its ${c.revisionCount} saved version(s)? This cannot be undone.`)) return;
+    setError('');
+    try {
+      await api('DELETE', `/api/campaigns/${c.id}`);
+      await load();
     } catch (err) { setError(errorText(err)); }
   }
 
@@ -64,13 +73,14 @@ export function CampaignsPage() {
               {list.map((c) => (
                 <tr key={c.id}>
                   <td><Link to={`/campaigns/${c.id}`}>{c.name}</Link></td>
-                  <td><span className="badge">{c.status}</span></td>
+                  <td><span className={`badge status-${campaignStatus(c.status).tone}`} title={campaignStatus(c.status).hint}>{campaignStatus(c.status).label}</span></td>
                   <td>{c.revisionCount}</td>
                   <td>{c.createdByName ?? '—'}</td>
                   <td>{new Date(c.updatedAt).toLocaleString()}</td>
                   <td>
                     <Link to={`/campaigns/${c.id}`}>{can('campaign.edit') ? 'Open' : 'View'}</Link>
                     {can('campaign.edit') && <button className="link" onClick={() => void duplicate(c.id)}>Duplicate</button>}
+                    {can('campaign.edit') && campaignStatus(c.status).deletable && <button className="link danger" aria-label={`Delete ${c.name}`} onClick={() => void remove(c)}>Delete</button>}
                   </td>
                 </tr>
               ))}

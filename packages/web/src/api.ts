@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, body?: unknown): Promise<T> {
+export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (csrfToken && method !== 'GET') headers['x-csrf-token'] = csrfToken;
