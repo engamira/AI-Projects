@@ -21,6 +21,7 @@ export const CAPABILITIES = [
   'campaign.edit',
   'campaign.submit',
   'campaign.delete',
+  'audience.manage',
   'campaign.test_send',
   'campaign.send',
   'qa.review',
@@ -29,8 +30,8 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
-  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'assets.manage', 'campaign.view', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
-  builder: ['assets.manage', 'campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
+  admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'assets.manage', 'audience.manage', 'campaign.view', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
+  builder: ['assets.manage', 'audience.manage', 'campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
   qa_reviewer: ['campaign.view', 'qa.review', 'qa.approve'],
 };
 
@@ -119,6 +120,7 @@ export * from './palettes.js';
 export * from './brand.js';
 export * from './templates.js';
 export * from './status.js';
+export * from './contacts.js';
 export * from './content.js';
 export * from './personalize.js';
 export * from './presets.js';

@@ -11,7 +11,7 @@
     "create-admin": "tsx --env-file-if-exists=../../.env src/cli/create-admin.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "e2e": "tsx e2e/smoke.ts && tsx e2e/editor.ts && tsx e2e/brand.ts && tsx e2e/mobile.ts"
+    "e2e": "tsx e2e/smoke.ts && tsx e2e/editor.ts && tsx e2e/brand.ts && tsx e2e/mobile.ts && tsx e2e/audience.ts"
   },
   "dependencies": {
     "@cl/shared": "^0.0.0",
@@ -27,6 +27,7 @@
     "image-size": "^2.0.4",
     "mjml": "^5.4.1",
     "otpauth": "^9.5.2",
+    "papaparse": "^5.7.0",
     "pg": "^8.23.1",
     "playwright": "^1.64.1",
     "qrcode": "^1.5.4",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/sanitize-html": "^2.16.2",

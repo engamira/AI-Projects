@@ -292,3 +292,19 @@ ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .folder-actions { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
 .asset-move { display: block; margin: 6px 0; }
 .asset-move select { width: 100%; margin-top: 2px; }
+
+/* Audience */
+.capacity { margin: 12px 0 16px; }
+.capacity-bar { height: 10px; border-radius: 999px; background: var(--border); overflow: hidden; margin-bottom: 6px; max-width: 420px; }
+.capacity-bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; }
+.map-grid label { font-size: 0.85rem; font-weight: 600; display: block; }
+.map-grid select, .map-grid input { width: 100%; margin-top: 2px; font-weight: 400; }
+.import-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 12px 0 4px; }
+.stat { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface); }
+.stat strong { display: block; font-size: 1.6rem; line-height: 1.1; }
+.stat span { font-size: 0.8rem; color: var(--muted); }
+.stat.good strong { color: #2a8a5a; }
+.stat.warn strong { color: #c77700; }
+.issue-list { margin: 6px 0 12px; padding-left: 18px; font-size: 0.9rem; }
+.row-actions { white-space: nowrap; }

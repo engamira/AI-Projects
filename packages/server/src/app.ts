@@ -15,6 +15,7 @@ import { assetRoutes } from './routes/assets.js';
 import { brandRoutes } from './routes/brand.js';
 import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
+import { contactRoutes } from './routes/contacts.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { userRoutes } from './routes/users.js';
 import { seedSamplePictures } from './sampleart.js';
@@ -71,6 +72,7 @@ export async function buildApp({ db, config, webDir, onRoute }: AppOptions): Pro
   userRoutes(app, db, config);
   notificationRoutes(app, db);
   campaignRoutes(app, db, config);
+  contactRoutes(app, db);
   brandRoutes(app, db);
   await assetRoutes(app, db);
 

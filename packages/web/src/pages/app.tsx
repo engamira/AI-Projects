@@ -89,6 +89,7 @@ function Topbar() {
         </NavLink>
         <nav aria-label="Main">
           <NavLink to="/" end>Campaigns</NavLink>
+          {can('audience.manage') && <NavLink to="/audience">Audience</NavLink>}
           {can('assets.manage') && <NavLink to="/assets">Pictures</NavLink>}
           {can('brand.manage') && <NavLink to="/admin/brand">Brand</NavLink>}
           {can('users.manage') && <NavLink to="/admin/users">Users</NavLink>}
