@@ -5,8 +5,8 @@ import {
   cloneContent,
   collectAssetIds,
   PALETTE_IDS,
-  SAMPLE_RECIPIENTS,
   campaignStatus,
+  hasCapability,
   emptyContent,
   normalizeContent,
   starterContent,
@@ -20,6 +20,8 @@ import {
   type SaveDraftResponse,
 } from '@cl/shared';
 import { missingAssets } from '../assets.js';
+import { resolveRecipient } from '../campaignAudience.js';
+import { allFields } from '../contacts.js';
 import { roleEditRefusal } from '../editrules.js';
 import { listLibrary } from '../blocklib.js';
 import { latestProfile } from '../brand.js';
@@ -289,8 +291,10 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
   app.get<{ Params: { id: string }; Querystring: { revision?: string; as?: string } }>('/api/campaigns/:id/preview', { config: { access: 'campaign.view' } }, async (req, reply): Promise<PreviewResponse | FastifyReply> => {
     const { id } = idParam.parse(req.params);
     const rid = z.string().uuid().optional().parse(req.query.revision);
-    const as = z.enum(['sample', 'empty', 'raw']).default('sample').parse(req.query.as);
-    const recipient = SAMPLE_RECIPIENTS.find((r) => r.id === as)!.recipient;
+    const as = z.string().max(80).default('sample').parse(req.query.as);
+    const who = await resolveRecipient(db, id, as, hasCapability(req.auth!.user.role, 'audience.manage'));
+    if (who.kind === 'not_found') return reply.status(400).send({ error: 'invalid_recipient', message: 'That recipient does not exist (any more).' });
+    if (who.kind === 'forbidden') return reply.status(403).send({ error: 'forbidden' });
     const c = await getCampaign(db, id);
     if (!c) return notFound(reply);
     let content = c.draft_content;
@@ -301,6 +305,8 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     }
     // Every email shows the shared header and footer of its template (latest version).
     const brand = await latestProfile(db, content.settings.palette);
-    return renderEmail(content, { baseUrl: config.baseUrl, brand, ...(recipient === null ? {} : { recipient }) });
+    const knownFields = (await allFields(db)).map((f) => f.key);
+    const out = await renderEmail(content, { baseUrl: config.baseUrl, brand, knownFields, ...(who.kind === 'recipient' ? { recipient: who.recipient } : {}) });
+    return who.kind === 'recipient' ? { ...out, recipientLabel: who.label } : out;
   });
 }

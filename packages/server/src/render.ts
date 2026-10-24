@@ -294,7 +294,7 @@ export function renderBlock(block: BlockInstance, ctx: Ctx): string {
 }
 
 export type BrandParts = { header: Props; footer: Props };
-export type RenderOptions = { baseUrl?: string; brand?: BrandParts };
+export type RenderOptions = { baseUrl?: string; brand?: BrandParts; /** Extra field names (your own contact fields) that are valid in {{placeholders}}. */ knownFields?: string[] };
 
 /** Pictures from the asset library are stored as "asset:<id>"; emails need real web addresses. */
 function resolveAssets<T>(value: T, baseUrl: string): T {
@@ -381,5 +381,5 @@ export async function renderEmail(content: EmailContent, opts: RenderOptions & {
   return { html, text, warnings: [
       ...out.errors.map((e) => e.formattedMessage ?? e.message ?? 'Unknown MJML warning'),
       ...normalizeContent(content).blocks.filter((x) => x.type === 'custom_html').flatMap((x) => customHtmlWarnings(String(x.props.html ?? '')).map((w) => `Custom HTML block "${String(x.props.label ?? '')}": ${w}.`)),
-    ], placeholderIssues: findPlaceholderIssues(normalizeContent(content)) };
+    ], placeholderIssues: findPlaceholderIssues(normalizeContent(content), opts.knownFields ?? []) };
 }

@@ -156,4 +156,4 @@ export type RevisionDto = {
   hash: string;
   restoredFromNumber: number | null;
 };
-export type PreviewResponse = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[] };
+export type PreviewResponse = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[]; recipientLabel?: string };

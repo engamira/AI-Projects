@@ -315,4 +315,6 @@ ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .new-field-row select { width: auto; }
 .field-chips { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 8px; }
 .field-chips li { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; background: var(--surface); }
+.radio-row { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.audience-pane { max-width: 980px; }
 .seg-fields { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }

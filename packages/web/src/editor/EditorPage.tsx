@@ -26,13 +26,18 @@ import {
   type EmailSettings,
   type LibraryResponse,
   BLOCK_PRESETS,
+  segmentCode,
+  valueLabel,
+  type ContactField,
+  type SegmentsResponse,
+  type TestContactDto,
   campaignStatus,
   applyItem,
   matchingItem,
   presetKeys,
   type PlaceholderIssue,
   type PreviewResponse,
-  type SampleId,
+  type PreviewRecipientsResponse,
   SAMPLE_RECIPIENTS,
   type PropValue,
   type RevisionDto,
@@ -284,7 +289,9 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
   const [html, setHtml] = useState('');
   const [text, setText] = useState('');
   const [issues, setIssues] = useState<PlaceholderIssue[]>([]);
-  const [as, setAs] = useState<SampleId>('sample');
+  const [as, setAs] = useState<string>('sample');
+  const [recipients, setRecipients] = useState<PreviewRecipientsResponse | null>(null);
+  const [shownAs, setShownAs] = useState('');
   const [showText, setShowText] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState('');
@@ -297,7 +304,7 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
       try {
         if (!revision && !(await flushSave())) throw new Error('Fix the problem shown at the top before previewing.');
         const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview?as=${as}${revision ? `&revision=${revision.id}` : ''}`);
-        if (live) { setHtml(r.html); setText(r.text); setIssues(r.placeholderIssues); setWarnings(r.warnings); setError(''); }
+        if (live) { setShownAs(r.recipientLabel ?? ''); setHtml(r.html); setText(r.text); setIssues(r.placeholderIssues); setWarnings(r.warnings); setError(''); }
       } catch (e) {
         if (live) setError(errorText(e));
       }
@@ -305,14 +312,21 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
     return () => { live = false; };
   }, [campaignId, revision, as]);
 
+  // who the email can be shown as: examples, the made-up test audience and your contacts, grouped by segment
+  useEffect(() => {
+    api<PreviewRecipientsResponse>('GET', `/api/campaigns/${campaignId}/preview-recipients`).then(setRecipients).catch(() => undefined);
+  }, [campaignId]);
+
   return (
     <div className="preview-pane">
       <div className="preview-bar">
         <strong>{revision ? `Version ${revision.number}` : 'Current draft'}</strong>
         <span className="muted small">Phone and desktop side by side. Each has its own width.</span>
         <label className="small">Preview as{' '}
-          <select value={as} onChange={(e) => setAs(e.target.value as SampleId)}>
-            {SAMPLE_RECIPIENTS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          <select value={as} onChange={(e) => setAs(e.target.value)}>
+            {(recipients?.groups ?? [{ title: 'Built-in examples', recipients: SAMPLE_RECIPIENTS.map((r) => ({ id: r.id, label: r.label })) }]).map((g) => (
+              <optgroup key={g.title} label={g.title}>{g.recipients.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</optgroup>
+            ))}
           </select>
         </label>
         <button type="button" onClick={() => setShowText((v) => !v)}>{showText ? 'Show email' : 'Show plain text'}</button>
@@ -324,6 +338,7 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
           <ul>{issues.map((i, k) => <li key={k}><code>{i.text}</code> — {i.message}</li>)}</ul>
         </div>
       )}
+      {shownAs && <p className="small" data-testid="previewing-as">Previewing as <strong>{shownAs}</strong></p>}
       <p className="muted small">Browser preview. It is not an Outlook or Gmail simulation: real email apps can render differently.</p>
       {error && <p className="error" role="alert">{error}</p>}
       {warnings.length > 0 && <details><summary>{warnings.length} rendering note(s)</summary><pre>{warnings.join('\n')}</pre></details>}
@@ -337,6 +352,108 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
         <DeviceFrame kind="phone" html={html} widths={PHONE_WIDTHS} initial={375} />
         <DeviceFrame kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={desktopStart} />
       </div>
+    </div>
+  );
+}
+
+// ---------- Audience set-up for this campaign ----------
+type AudienceInfo = { audience: { fields: string[] }; available: ContactField[]; test: TestContactDto[] };
+
+function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: boolean }) {
+  const { can } = useSession();
+  const [info, setInfo] = useState<AudienceInfo | null>(null);
+  const [segs, setSegs] = useState<SegmentsResponse | null>(null);
+  const [mode, setMode] = useState<'sheet' | 'all'>('sheet');
+  const [extra, setExtra] = useState<Record<string, string>>({});
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const i = await api<AudienceInfo>('GET', `/api/campaigns/${campaignId}/audience`);
+    setInfo(i);
+    if (can('audience.manage') && i.audience.fields.length) setSegs(await api<SegmentsResponse>('GET', `/api/audience/segments?fields=${i.audience.fields.join(',')}`));
+    else setSegs(null);
+  }, [campaignId, can]);
+  useEffect(() => { load().catch((e) => setError(errorText(e))); }, [load]);
+
+  const guarded = async (fn: () => Promise<void>) => {
+    setError('');
+    setBusy(true);
+    try { await fn(); await load(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+  };
+  const chosen = info?.audience.fields ?? [];
+  const chosenFields = chosen.map((k) => info?.available.find((f) => f.key === k)).filter((f): f is ContactField => !!f);
+
+  function toggle(key: string) {
+    const next = chosen.includes(key) ? chosen.filter((k) => k !== key) : [...chosen, key];
+    if (info && info.test.length && !window.confirm('Changing the fields removes the test audience made for this campaign. Continue?')) return;
+    void guarded(async () => { await api('PUT', `/api/campaigns/${campaignId}/audience`, { fields: next }); });
+  }
+  const generate = () => guarded(async () => {
+    const extraValues = Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, v.split(',').map((s) => s.trim()).filter(Boolean)]));
+    await api('POST', `/api/campaigns/${campaignId}/test-audience`, { mode, extraValues });
+  });
+
+  return (
+    <div className="audience-pane">
+      <h2>Who this campaign is for</h2>
+      <p className="muted small">Choose the fields that split this campaign's audience into segments, for example Country and Language. A segment is named from its values, such as UAE-en or EG-ar, and those names appear in Preview and test sends. Each campaign can use different fields.</p>
+      {error && <p className="error" role="alert">{error}</p>}
+      <div className="seg-fields" role="group" aria-label="Fields that segment this campaign">
+        {(info?.available ?? []).map((f) => (
+          <button key={f.key} type="button" disabled={!canEdit || busy} className={`folder-chip${chosen.includes(f.key) ? ' active' : ''}`} aria-pressed={chosen.includes(f.key)} onClick={() => toggle(f.key)}>
+            {chosen.includes(f.key) ? `${chosen.indexOf(f.key) + 1}. ` : ''}{f.label.replace(/ \(.*\)$/, '')}
+          </button>
+        ))}
+      </div>
+      {!canEdit && <p className="muted small">Only a Builder can change this, and only while the campaign is a draft.</p>}
+
+      {chosen.length === 0 && <p className="muted">Pick at least one field to see the segments and to create a test audience.</p>}
+      {segs && (
+        <>
+          <h3>Segments in your contact list</h3>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Segment</th>{segs.fields.map((f) => <th key={f.key}>{f.label.replace(/ \(.*\)$/, '')}</th>)}<th>Contacts</th><th>Eligible</th></tr></thead>
+              <tbody>{segs.segments.map((s) => <tr key={s.id}><td><strong>{segmentCode(s.values)}</strong></td>{s.values.map((v, i) => <td key={i}>{valueLabel(v)}</td>)}<td>{s.total}</td><td>{s.eligible}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {chosen.length > 0 && (
+        <div className="card wide" data-testid="test-audience">
+          <h3 style={{ marginTop: 0 }}>Test audience</h3>
+          <p className="muted small">Made-up contacts, one for each segment, to try this email against. They are not part of your contact list, they are never emailed, and they use made-up addresses ending in .invalid. Pick one in the Preview tab with "Preview as".</p>
+          {canEdit && (
+            <>
+              <div className="radio-row" role="radiogroup" aria-label="How to make the test audience">
+                <label className="check"><input type="radio" name="mode" checked={mode === 'sheet'} onChange={() => setMode('sheet')} /> One for each segment in my contact list</label>
+                <label className="check"><input type="radio" name="mode" checked={mode === 'all'} onChange={() => setMode('all')} /> Every combination of the values (including ones I type below)</label>
+              </div>
+              <div className="map-grid">
+                {chosenFields.map((f) => (
+                  <label key={f.key}>Extra values for {f.label.replace(/ \(.*\)$/, '')} <span className="muted small">(separate with commas)</span>
+                    <input value={extra[f.key] ?? ''} placeholder="e.g. SA, KW" onChange={(e) => setExtra({ ...extra, [f.key]: e.target.value })} />
+                  </label>
+                ))}
+              </div>
+              <div className="row" style={{ marginTop: 10 }}>
+                <div style={{ flex: '0 0 auto' }}><button type="button" className="primary" disabled={busy} onClick={() => void generate()}>{(info?.test.length ?? 0) > 0 ? 'Make the test audience again' : 'Make the test audience'}</button></div>
+                {(info?.test.length ?? 0) > 0 && <button type="button" disabled={busy} onClick={() => void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience`); })}>Remove it</button>}
+              </div>
+            </>
+          )}
+          {(info?.test.length ?? 0) > 0 && (
+            <div className="table-scroll" style={{ marginTop: 10 }}>
+              <table>
+                <thead><tr><th>Segment</th><th>Test contact</th><th>Made-up address</th></tr></thead>
+                <tbody>{info!.test.map((c) => <tr key={c.id}><td><strong>{c.code}</strong></td><td>{String(c.data.first_name ?? '')} {String(c.data.last_name ?? '')}</td><td className="muted small">{c.email}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -455,7 +572,7 @@ export function EditorPage() {
   const canAny = canEdit || can('html.custom'); // an Admin may only work on Custom HTML blocks
   const lib = useLibrary();
   const s = useEditor();
-  const [tab, setTab] = useState<'edit' | 'preview' | 'versions'>('edit');
+  const [tab, setTab] = useState<'edit' | 'audience' | 'preview' | 'versions'>('edit');
   const [loadError, setLoadError] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
   const [live, setLive] = useState(false);
@@ -565,9 +682,9 @@ export function EditorPage() {
           </label>
         )}
         <div role="tablist" className="tabs">
-          {(['edit', 'preview', 'versions'] as const).map((t) => (
+          {(['edit', 'audience', 'preview', 'versions'] as const).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-              {t === 'edit' ? 'Edit' : t === 'preview' ? 'Preview' : 'Versions'}
+              {t === 'edit' ? 'Edit' : t === 'audience' ? 'Audience' : t === 'preview' ? 'Preview' : 'Versions'}
             </button>
           ))}
         </div>
@@ -595,6 +712,7 @@ export function EditorPage() {
           <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>
         </DndContext>
       )}
+      {tab === 'audience' && <div className="tab-body"><AudiencePane campaignId={id} canEdit={canEdit && s.status === 'draft'} /></div>}
       {tab === 'preview' && <div className="tab-body"><PreviewPane campaignId={id} /></div>}
       {tab === 'versions' && <div className="tab-body"><VersionsPane campaignId={id} canEdit={canEdit} onRestored={() => setTab('edit')} /></div>}
     </div>

@@ -6,10 +6,13 @@ export const PERSONAL_FIELDS = [
   { key: 'last_name', label: 'Last name' },
   { key: 'company', label: 'Company' },
   { key: 'email', label: 'Email address' },
+  { key: 'country', label: 'Country' },
+  { key: 'city', label: 'City' },
+  { key: 'language', label: 'Language' },
 ] as const;
 export type PersonalField = (typeof PERSONAL_FIELDS)[number]['key'];
-/** Values for one recipient. A missing or empty value means the fallback is used. */
-export type Recipient = Partial<Record<PersonalField, string | null>>;
+/** Values for one recipient, by field key (built-in or your own). A missing or empty value means the fallback is used. */
+export type Recipient = Record<string, string | number | boolean | null | undefined>;
 
 const FIELD_KEYS = new Set<string>(PERSONAL_FIELDS.map((f) => f.key));
 const Q = '(?:"|&quot;)'; // the same text is also seen after HTML escaping
@@ -33,15 +36,16 @@ function allStrings(value: unknown, out: string[] = []): string[] {
 }
 
 /** Finds placeholders that would reach a recipient broken: unknown field, no fallback, or half-typed braces. */
-export function findPlaceholderIssues(value: unknown): PlaceholderIssue[] {
+export function findPlaceholderIssues(value: unknown, extraKeys: Iterable<string> = []): PlaceholderIssue[] {
+  const known = new Set<string>([...FIELD_KEYS, ...extraKeys]);
   const issues: PlaceholderIssue[] = [];
   const seen = new Set<string>();
   const add = (i: PlaceholderIssue) => { const k = i.kind + i.text; if (!seen.has(k)) { seen.add(k); issues.push(i); } };
   for (const str of allStrings(value)) {
     for (const m of str.matchAll(TOKEN)) {
       const [text, field, fallback] = m;
-      if (!FIELD_KEYS.has(field!)) {
-        add({ kind: 'unknown_field', text, message: `"${field}" is not a known field. Use one of: ${PERSONAL_FIELDS.map((f) => f.key).join(', ')}.` });
+      if (!known.has(field!)) {
+        add({ kind: 'unknown_field', text, message: `"${field}" is not a known field. Use one of: ${[...known].slice(0, 12).join(', ')}${known.size > 12 ? ', …' : ''}.` });
       } else if (!ALWAYS_PRESENT.has(field!) && (fallback === undefined || fallback.trim() === '')) {
         add({ kind: 'missing_fallback', text, message: `Add a fallback, for example {{${field} | fallback: "there"}}, so nobody sees an empty gap.` });
       }
@@ -63,9 +67,9 @@ const escHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&
  */
 export function personalize(source: string, recipient: Recipient | null, opts: { html: boolean }): string {
   return source.replace(TOKEN, (whole, field: string, fallback: string | undefined) => {
-    if (!FIELD_KEYS.has(field)) return whole;
-    const v = recipient?.[field as PersonalField];
-    if (typeof v === 'string' && v.trim() !== '') return opts.html ? escHtml(v.trim()) : v.trim();
+    const v = recipient?.[field];
+    const text = typeof v === 'boolean' ? (v ? 'Yes' : 'No') : typeof v === 'number' ? String(v) : typeof v === 'string' ? v.trim() : '';
+    if (text !== '') return opts.html ? escHtml(text) : text;
     if (fallback !== undefined && fallback.trim() !== '') return fallback;
     return whole;
   });

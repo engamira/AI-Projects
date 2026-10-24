@@ -243,3 +243,28 @@ export type ImportPreview = {
 };
 
 export type ImportResult = ImportPreview & { batchId: string; added: number; updated: number };
+
+// ---------- A campaign's audience and test audience ----------
+/** The short name of a segment, made from its values in the order of the chosen fields: UAE-en, EG-ar, ... */
+export function segmentCode(values: (string | number | boolean | null)[]): string {
+  return values
+    .map((v) => (v === null || v === '' ? 'blank' : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v).trim().replace(/\s+/g, ' ')))
+    .join('-');
+}
+
+export type CampaignAudienceDto = { fields: string[] };
+
+/** A made-up contact generated to test an email for one segment. Never part of the real contact list and never mailed. */
+export type TestContactDto = { id: string; code: string; email: string; data: Record<string, string | number | boolean | null> };
+
+export type TestAudienceRequest = {
+  /** "sheet": one test contact for each segment that exists in your contact list. "all": every combination of the values (from your list plus the extra values below). */
+  mode: 'sheet' | 'all';
+  /** Extra values to include for a field (field key -> values), for combinations your list does not have yet. */
+  extraValues?: Record<string, string[]>;
+};
+export const TEST_AUDIENCE_MAX = 60;
+
+export type PreviewRecipient = { id: string; label: string };
+export type PreviewRecipientGroup = { title: string; recipients: PreviewRecipient[] };
+export type PreviewRecipientsResponse = { segmentFields: ContactField[]; groups: PreviewRecipientGroup[] };

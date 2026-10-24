@@ -115,6 +115,28 @@ try {
   assert(await page.getByRole('button', { name: 'Add a contact' }).isEnabled(), 'adding is possible again after the limit is raised');
   ok('an Admin can raise the limit; the counter and Add button follow');
 
+  // ---- a campaign chooses its segment fields, makes a test audience, and previews as a segment
+  await page.goto(`${BASE}/`);
+  await page.getByLabel('Campaign name').fill('Segment test campaign');
+  await page.getByRole('button', { name: 'Create and open' }).click();
+  await page.getByRole('region', { name: 'Email canvas' }).waitFor();
+  await page.getByRole('tab', { name: 'Audience' }).click();
+  const fieldsGroup = page.getByRole('group', { name: 'Fields that segment this campaign' });
+  await fieldsGroup.getByRole('button', { name: 'Country', exact: true }).click();
+  await fieldsGroup.getByRole('button', { name: /Language/ }).click();
+  await page.locator('td strong', { hasText: 'UAE-en' }).first().waitFor(); // named from the values in the order chosen
+  await page.getByRole('button', { name: 'Make the test audience', exact: true }).click();
+  const tests = page.getByTestId('test-audience');
+  await tests.locator('td strong', { hasText: 'UAE-en' }).waitFor();
+  assert((await tests.getByText(/\.invalid/).count()) >= 1, 'test contacts use made-up addresses');
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  const who = page.getByLabel('Preview as');
+  await who.locator('optgroup[label^="Test audience"] option', { hasText: 'UAE-en' }).first().waitFor({ state: 'attached' });
+  const value = await who.locator('optgroup[label^="Test audience"] option', { hasText: 'UAE-en' }).first().getAttribute('value');
+  await who.selectOption(value!);
+  await page.getByTestId('previewing-as').getByText('UAE-en (test contact)').waitFor();
+  ok('a campaign chooses its segment fields, makes a test audience named like UAE-en, and previews as that segment');
+
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');
   await qa.goto(`${BASE}/`);
