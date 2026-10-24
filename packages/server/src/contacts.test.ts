@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { IMPORT_MAX_BYTES, MAX_CONTACTS, type ContactDto, type ImportPreview } from '@cl/shared';
+import { DEFAULT_CONTACT_LIMIT as MAX_CONTACTS, IMPORT_MAX_BYTES, IMPORT_MAX_ROWS, type ContactDto, type ImportPreview } from '@cl/shared';
 import { autoMapping, parseCsv } from './contacts.js';
 import { createTestApp, type Client, type TestApp } from './testkit.js';
 
@@ -138,9 +138,9 @@ describe('import preview and commit', () => {
     expect((await contacts())[0]).toMatchObject({ email: 'ann@example.com', firstName: 'Ann' });
     const tooBig = await preview('email\n' + 'a@example.com\n'.repeat(Math.ceil(IMPORT_MAX_BYTES / 14) + 10));
     expect(tooBig.status).toBe(400);
-    const tooMany = await preview('email\n' + Array.from({ length: 501 }, (_, i) => `u${i}@example.com`).join('\n'));
+    const tooMany = await preview('email\n' + Array.from({ length: IMPORT_MAX_ROWS + 1 }, (_, i) => `u${i}@example.com`).join('\n'));
     expect(tooMany.status).toBe(400);
-    expect(tooMany.body.message).toContain('500 rows');
+    expect(tooMany.body.message).toContain(`${IMPORT_MAX_ROWS} rows`);
   });
 
   it('the activity history records the import with counts only, never email addresses', async () => {
@@ -195,5 +195,104 @@ describe('single contacts, exclusions and who may use the audience', () => {
     expect((await doImport(file([line(2)]), {}, qa)).status).toBe(403);
     expect((await qa.post('/api/contacts', { email: 'qa@example.com' })).status).toBe(403);
     expect(await contacts()).toHaveLength(1);
+  });
+});
+
+describe('the limit is a setting, custom fields and segments', () => {
+  const setLimit = (who: Client, n: unknown) => who.put('/api/audience/settings', { contactLimit: n });
+  afterAll(async () => { await t.db.query('DELETE FROM audience_setting'); await t.db.query('DELETE FROM contact_field'); });
+
+  it('only an Admin can change the limit; it stays 10 until they do, then more contacts fit, and it cannot go below what is stored', async () => {
+    expect((await builder.get('/api/contacts')).body.max).toBe(10);
+    expect((await setLimit(builder, 25)).status).toBe(403);
+    expect((await setLimit(qa, 25)).status).toBe(403);
+    await doImport(file(Array.from({ length: 10 }, (_, i) => line(i + 1))));
+    expect((await doImport(file([line(50)]))).body).toMatchObject({ added: 0, overLimit: 1 });
+    expect((await setLimit(admin, 25)).body.contactLimit).toBe(25);
+    expect((await builder.get('/api/contacts')).body.max).toBe(25);
+    const more = await doImport(file(Array.from({ length: 20 }, (_, i) => line(i + 100))));
+    expect(more.body).toMatchObject({ added: 15, overLimit: 5 });
+    expect(await contacts()).toHaveLength(25);
+    const tooLow = await setLimit(admin, 12);
+    expect(tooLow.status, JSON.stringify(tooLow.body)).toBe(400);
+    expect(tooLow.body.message).toContain('25 contacts stored');
+    expect((await setLimit(admin, 0)).status, 'zero').toBe(400);
+    expect((await setLimit(admin, 1001)).status, 'ceiling').toBe(400);
+    expect((await setLimit(admin, 2.5)).status, 'fraction').toBe(400);
+    // the database enforces the new number too
+    await expect(t.db.query("INSERT INTO contact (workspace_id, email, email_key) SELECT workspace_id, 'z@example.com', 'z@example.com' FROM contact LIMIT 1")).rejects.toThrow(/limit/);
+    await t.db.query('DELETE FROM audience_setting');
+  });
+
+  it('a column that is not built in can be brought in as a new field, and its values are kept per contact', async () => {
+    const csv = 'Email,Country of Residence,Interest Level\nann@example.com,UAE,3\nbob@example.com,Egypt,\n';
+    const p = (await preview(csv, { newFields: [{ column: 'Country of Residence', label: 'Country of residence', type: 'text' }, { column: 'Interest Level', label: 'Interest level', type: 'number' }] })).body as ImportPreview;
+    expect(p.willAdd).toBe(2);
+    expect(p.fields.map((f) => f.key)).toEqual(expect.arrayContaining(['country_of_residence', 'interest_level']));
+    expect((await builder.get('/api/contacts')).body.fields.some((f: { key: string }) => f.key === 'country_of_residence')).toBe(false); // preview created nothing
+    await doImport(csv, { newFields: [{ column: 'Country of Residence', label: 'Country of residence', type: 'text' }, { column: 'Interest Level', label: 'Interest level', type: 'number' }] });
+    const res = (await builder.get('/api/contacts')).body;
+    expect(res.fields.filter((f: { custom?: boolean }) => f.custom).map((f: { key: string }) => f.key)).toEqual(['country_of_residence', 'interest_level']);
+    const ann = res.contacts.find((c: ContactDto) => c.email === 'ann@example.com');
+    expect(ann.custom).toEqual({ country_of_residence: 'UAE', interest_level: 3 });
+    expect(res.contacts.find((c: ContactDto) => c.email === 'bob@example.com').custom).toEqual({ country_of_residence: 'Egypt' });
+    // bad value in a custom column is a row problem like any other
+    const bad = (await preview('Email,Interest Level\ncy@example.com,lots\n', { mapping: { email: 'Email', interest_level: 'Interest Level' } })).body as ImportPreview;
+    expect(bad.invalid).toBe(1);
+    expect(bad.issues[0]!.message).toContain('Interest level must be a whole number');
+    // later files match the custom field by its name, with no setup
+    const again = (await preview('Email,Country of residence\ndee@example.com,Oman\n')).body as ImportPreview;
+    expect(again.mapping.country_of_residence).toBe('Country of residence');
+  });
+
+  it('custom fields can be added by hand, edited on a contact, and removed (their values go too); names cannot clash', async () => {
+    const f = await builder.post('/api/contact-fields', { label: 'Favourite colour', type: 'text' });
+    expect(f.status).toBe(201);
+    expect(f.body).toEqual({ key: 'favourite_colour', label: 'Favourite colour', type: 'text' });
+    expect((await builder.post('/api/contact-fields', { label: 'favourite COLOUR', type: 'text' })).status).toBe(409);
+    expect((await builder.post('/api/contact-fields', { label: 'Country', type: 'text' })).status).toBe(409); // built in
+    expect((await builder.post('/api/contact-fields', { label: '', type: 'text' })).status).toBe(400);
+    expect((await builder.post('/api/contact-fields', { label: 'Odd', type: 'colour' })).status).toBe(400);
+    const c = await builder.post('/api/contacts', { email: 'eve@example.com', favourite_colour: 'Blue' });
+    expect(c.body.custom).toEqual({ favourite_colour: 'Blue' });
+    expect((await builder.patch(`/api/contacts/${c.body.id}`, { favourite_colour: '' })).body.custom).toEqual({});
+    await builder.patch(`/api/contacts/${c.body.id}`, { favourite_colour: 'Red' });
+    expect((await qa.delete('/api/contact-fields/favourite_colour')).status).toBe(403);
+    expect((await builder.delete('/api/contact-fields/favourite_colour')).status).toBe(204);
+    expect((await builder.delete('/api/contact-fields/favourite_colour')).status).toBe(404);
+    expect((await contacts()).find((x) => x.email === 'eve@example.com')!.custom).toEqual({});
+  });
+
+  it('segments split the contacts by the fields you choose, with total and eligible counts; blanks and capitals are handled', async () => {
+    await builder.post('/api/contact-fields', { label: 'Country of residence', type: 'text' });
+    const csv = [
+      'Email,Language,City,Country of residence,Marketing Permission',
+      'a1@example.com,en,Dubai,UAE,yes',
+      'a2@example.com,EN,Dubai,UAE,yes',
+      'a3@example.com,en,Dubai,UAE,no',
+      'b1@example.com,ar,Cairo,Egypt,yes',
+      'c1@example.com,,Cairo,Egypt,yes',
+    ].join('\n');
+    await doImport(csv);
+    const seg = async (fields: string) => (await builder.get(`/api/audience/segments?fields=${fields}`)).body;
+    const one = await seg('language');
+    expect(one.totalContacts).toBe(5);
+    expect(one.totalEligible).toBe(4);
+    expect(one.segments.map((s: { label: string; total: number; eligible: number }) => [s.label, s.total, s.eligible])).toEqual([
+      ['Language: en', 3, 2], ['Language: (blank)', 1, 1], ['Language: ar', 1, 1],
+    ].sort((a, b) => (b[1] as number) - (a[1] as number) || String(a[0]).localeCompare(String(b[0]))));
+    const two = await seg('country_of_residence,language');
+    expect(two.fields.map((f: { key: string }) => f.key)).toEqual(['country_of_residence', 'language']);
+    expect(two.segments).toHaveLength(3);
+    const uae = two.segments.find((s: { label: string }) => s.label.includes('UAE'));
+    expect(uae).toMatchObject({ total: 3, eligible: 2, values: ['UAE', 'en'] });
+    expect(uae.sampleEmails).toHaveLength(3);
+    const other = await seg('language,city'); // another campaign can use another combination
+    expect(other.segments.some((s: { label: string }) => s.label === 'Language: en · City: Dubai')).toBe(true);
+    // the same contacts, the sum of every segment is everyone
+    expect(two.segments.reduce((n: number, s: { total: number }) => n + s.total, 0)).toBe(5);
+    expect((await builder.get('/api/audience/segments?fields=nope')).status).toBe(400);
+    expect((await builder.get('/api/audience/segments')).status).toBe(400);
+    expect((await qa.get('/api/audience/segments?fields=language')).status).toBe(403);
   });
 });

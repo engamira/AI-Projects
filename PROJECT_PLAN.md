@@ -4,7 +4,7 @@ Status of this document: consolidated v1 specification, last updated 2026-10-24 
 Prices are approximate and must be re-verified at signup. Progress, checks and blockers live in PROJECT_STATUS.md.
 
 ## 1. Goal
-Non-technical marketers build an email from drag-and-drop blocks, preview it, run QA, submit it for independent review, filter an audience of up to 10 contacts, and send real emails through one provider. Hosted online with secure sign-in.
+Non-technical marketers build an email from drag-and-drop blocks, preview it, run QA, submit it for independent review, segment an audience, and send real emails through one provider. Hosted online with secure sign-in.
 
 ## 2. Decisions
 | Area | Decision |
@@ -85,7 +85,7 @@ Exceptions: ignore once; scoped (block, campaign, brand); admin-only rule disabl
 - Visual design is original; placeholder or licensed-free imagery. Final designs require user approval before M3 completes.
 
 ## 8. Audience
-- Max 10 stored contacts, enforced across repeated imports. CSV import with field mapping, validation, clear row errors.
+- Contact limit is a setting (user decision 2026-10-24): 10 while the functions are being tested, raised by an Admin (ceiling 1000 for now) when the real audience arrives; enforced across repeated imports and in the database. CSV import with field mapping, validation, clear row errors. Contacts have built-in fields plus custom fields (up to 20) created by hand or from unmatched CSV columns. **Segments (user decision 2026-10-24):** a campaign chooses one or more fields (for example Country + Language, or Language + City) and the audience is split into segments, one per combination of values, with total and eligible counts; each campaign may choose different fields; the segments chosen are shown when testing the email ("Preview as..." and test sends).
 - Duplicates: key = trimmed lowercase email. Within file: first kept, later rows skipped and reported. Against stored: skipped by default, per-import option to update attributes (does not consume capacity). Over-cap imports show a preview of rows that fit; nothing saved until confirmed.
 - Visual AND/OR filters with type-appropriate operators, missing-value handling, saved segments, match counts, sample records.
 - Eligible = filter match minus inactive marketing permission, unsubscribed, suppressed. Show match count and eligible count separately. Bounce/complaint webhooks add suppression.

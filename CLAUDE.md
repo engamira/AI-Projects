@@ -10,6 +10,6 @@
 - Secrets stay server-side; never commit .env or keys. Mock email adapter is test-only.
 - Browser previews are not email-client tests; never claim QA catches all bugs.
 - Check licenses before reusing third-party HTML/assets; prefer original designs.
-- Max 10 contacts; test sends only to allowlisted testers.
+- Contact limit is a setting: 10 while testing; only an Admin can raise it (ceiling 1000 for now), and the database enforces it. Test sends only to allowlisted testers.
 - You may suggest extra features (benefit, effort, scope impact) but ask before implementing; keep working on agreed scope.
 - Keep explanations concise; label assumptions.

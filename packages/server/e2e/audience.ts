@@ -89,6 +89,32 @@ try {
   await page.getByText('hand.added@example.com').waitFor();
   ok('deleting frees a place and a contact can be added by hand');
 
+  // ---- segments by the fields you choose (built-in and your own)
+  const seg = page.getByTestId('segments');
+  await seg.getByRole('button', { name: 'Country', exact: true }).click();
+  await seg.getByRole('button', { name: 'Language', exact: true }).click();
+  await seg.getByText(/segments? from 10 contacts/).waitFor();
+  assert((await seg.locator('thead th').allInnerTexts()).slice(0, 2).join('|') === 'Country|Language', 'the chosen fields are the columns, in the order chosen');
+  assert((await seg.locator('tbody tr').count()) === 2, 'one segment for UAE and en, and one for the contact added by hand with those fields blank');
+  assert((await seg.getByText('(blank)').count()) >= 1, 'blank values are shown as (blank)');
+  await seg.getByRole('button', { name: /Country/ }).click(); // choose another combination for another campaign
+  await seg.getByRole('button', { name: 'City', exact: true }).click();
+  await seg.locator('thead th', { hasText: 'City' }).waitFor(); // wait for the new table, not the old one
+  assert((await seg.locator('thead th').allInnerTexts()).slice(0, 2).join('|') === 'Language|City', 'a different combination works');
+  ok('segments can be built from any chosen fields and changed for another campaign');
+
+  // ---- an Admin raises the limit, a Builder cannot see the setting
+  assert((await page.getByLabel('Most contacts that can be stored').count()) === 0, 'a Builder does not see the limit setting');
+  const adm = await open('admin');
+  await adm.goto(`${BASE}/audience`);
+  await adm.getByLabel('Most contacts that can be stored').fill('12');
+  await adm.getByRole('button', { name: 'Save limit' }).click();
+  await adm.getByText('10 of 12 contacts stored').waitFor();
+  await page.reload();
+  await page.getByText('10 of 12 contacts stored').waitFor();
+  assert(await page.getByRole('button', { name: 'Add a contact' }).isEnabled(), 'adding is possible again after the limit is raised');
+  ok('an Admin can raise the limit; the counter and Add button follow');
+
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');
   await qa.goto(`${BASE}/`);

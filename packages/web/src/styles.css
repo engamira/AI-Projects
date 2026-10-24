@@ -308,3 +308,11 @@ ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .stat.warn strong { color: #c77700; }
 .issue-list { margin: 6px 0 12px; padding-left: 18px; font-size: 0.9rem; }
 .row-actions { white-space: nowrap; }
+.new-fields { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: var(--radius); }
+.new-fields h3 { margin: 0 0 4px; }
+.new-field-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 6px 0; }
+.new-field-row input[type="text"], .new-field-row input:not([type]) { width: 220px; }
+.new-field-row select { width: auto; }
+.field-chips { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+.field-chips li { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; background: var(--surface); }
+.seg-fields { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
