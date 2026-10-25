@@ -439,3 +439,55 @@ describe('segments made by block conditions, and sending one segment the email o
     expect((await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['EG']] } })).status).toBe(400);
   });
 });
+
+describe('every comparison makes a segment, and several values can be typed in one box', () => {
+  const types = (f: string) => ({ country: 'text', orders: 'number', since: 'date', vip: 'boolean' } as const)[f as 'country'];
+  const rule = (field: string, op: Comparison, ...values: string[]) => ({ match: 'all' as const, rules: [{ field, op, values }] });
+  function campaign() {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    const en = newVariant(c, ['language'], ['en'], 'language');
+    en.blocks = [textBlock('a'), textBlock('b'), textBlock('c'), textBlock('d'), textBlock('e'), textBlock('f')];
+    en.blocks[0]!.showWhen = rule('country', 'is', 'UAE, SA'); // typed in one box
+    en.blocks[1]!.showWhen = rule('country', 'contains', 'ua');
+    en.blocks[2]!.showWhen = rule('orders', 'greater', '10');
+    en.blocks[3]!.showWhen = rule('orders', 'less', '3');
+    en.blocks[4]!.showWhen = rule('since', 'greater', '2025-01-01');
+    en.blocks[5]!.showWhen = rule('country', 'is_blank');
+    c.variants = [en];
+    return { c, en };
+  }
+
+  it('"is" with several values typed in one box means any of them', () => {
+    const get = (c: Record<string, string>) => (f: string) => c[f];
+    const g = rule('country', 'is', 'UAE, SA');
+    expect(evaluateCondition(g, get({ country: 'sa' }))).toBe(true);
+    expect(evaluateCondition(g, get({ country: 'UAE' }))).toBe(true);
+    expect(evaluateCondition(g, get({ country: 'EG' }))).toBe(false);
+    expect(evaluateCondition(rule('country', 'is_not', 'UAE, SA'), get({ country: 'SA' }))).toBe(false);
+    expect(describeCondition(g, (k) => k)).toBe('country is UAE or SA');
+  });
+
+  it('lists a short-named segment for each comparison, and each has a test value that really falls into it', () => {
+    const { c } = campaign();
+    const d = derivedSegments(c, ['language'], ['en'], types);
+    expect(d.rows.length).toBeGreaterThan(5);
+    // the parts, per field: country (UAE, SA, has ua, blank), orders (over 10, under 3), since (after 2025-01-01)
+    const parts = new Set(d.rows.flatMap((r) => r.values));
+    for (const p of ['UAE', 'SA', 'has ua', 'blank', 'over 10', 'under 3', 'after 2025-01-01']) expect(parts.has(p)).toBe(true);
+    expect(d.rows.some((r) => r.code === 'Default-Default-Default-en')).toBe(true);
+    for (const r of d.rows) {
+      if (!r.samples) continue;
+      const contact = Object.fromEntries(r.fields.map((f, i) => [f, r.samples![i] === '' ? null : r.samples![i]]));
+      expect(routeKeyFor(c, ['language'], contact, types)).toBe(r.key); // the made-up contact lands in its own segment
+    }
+  });
+
+  it('a contact belongs to the first part it meets; plain values come before contains', () => {
+    const { c } = campaign();
+    const k = (country: string) => JSON.parse(routeKeyFor(c, ['language'], { country, orders: 1, since: null, language: 'en' }, types)) as [string[], string[]];
+    expect(k('UAE')[1][0]).toBe('uae'); // meets "is UAE" and "contains ua": the plain value wins
+    expect(k('Guam')[1][0]).toBe('has ua'); // only "contains ua"
+    expect(k('Egypt')[1][0]).toBe(''); // none: Default
+  });
+});

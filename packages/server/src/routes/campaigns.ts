@@ -315,7 +315,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     const picked = variantId ? content.variants?.find((v) => v.id === variantId) ?? null : null;
     if (variantId && !picked) return reply.status(400).send({ error: 'invalid_version', message: 'That version does not exist (any more).' });
     const contact = !variantId && who.kind === 'recipient' ? who.recipient : null;
-    const choice = contact ? pickVersion(content, await getAudienceFields(db, id), contact) : { variant: picked, layer: picked ? (picked.kind ? 'language' : 'copy') : 'default' };
+    const choice = contact ? pickVersion(content, await getAudienceFields(db, id), contact, typeOf) : { variant: picked, layer: picked ? (picked.kind ? 'language' : 'copy') : 'default' };
     const variant = choice.variant;
     const flat = flatContent(content, variant, { contact, typeOf });
     // Every email shows the shared header and footer of its template (latest version).

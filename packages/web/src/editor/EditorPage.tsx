@@ -21,6 +21,8 @@ import {
   activeLanguageVersions,
   blocksShownFor,
   describeCondition,
+  derivedSegments,
+  evaluateCondition,
   emptyGroup,
   isGroup,
   pickVersion,
@@ -63,6 +65,7 @@ import { BlockView } from './BlockView';
 import { ConditionBuilder } from '../components/ConditionBuilder';
 import { FieldForm } from './Fields';
 import { SegmentsPane, modeOf } from './SegmentsPane';
+import { useSegmentData } from './segmentData';
 import { useDerivedTestContacts } from './derivedSync';
 import { flushSave, useEditor } from './store';
 import { useBrand } from './useBrand';
@@ -119,17 +122,20 @@ function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, disabled: !canEdit });
   const def = blockDefinition(block.type);
   const { conditionFields } = useContext(AudienceCtx);
+  const focus = useEditor((s) => s.focus);
+  const hiddenFor = focus && block.showWhen && !evaluateCondition(block.showWhen, (f) => focus.contact[f], (k) => conditionFields.find((f) => f.key === k)?.type) ? focus.code : null;
   const selected = selectedId === block.id;
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className={`canvas-block ${selected ? 'selected' : ''}`}
+      className={`canvas-block ${selected ? 'selected' : ''}${hiddenFor ? ' dim-block' : ''}`}
       data-block-type={block.type}
       onClick={(e) => { e.stopPropagation(); select(block.id); }}
     >
       <div className="block-bar" onClick={(e) => e.stopPropagation()}>
         <span className="block-label">{def?.label ?? block.type}</span>
+        {hiddenFor && <span className="cond-badge" data-testid="hidden-for">Not shown to {hiddenFor}</span>}
         {block.showWhen && (
           <span className="cond-badge" data-testid="cond-badge" title="This block is shown only to contacts who meet this condition">
             Only when {describeCondition(block.showWhen, (k) => plainLabel(conditionFields.find((f) => f.key === k)?.label ?? k), (k) => conditionFields.find((f) => f.key === k)?.type)}
@@ -360,11 +366,12 @@ function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop
   );
 }
 
-function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; revision?: RevisionDto; onClose?: () => void }) {
+function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: string; revision?: RevisionDto; onClose?: () => void; /** Show the email for this recipient only (no "Preview as" choice, phone view): used for the quick view in the Versions tab. */ fixedAs?: string }) {
   const [html, setHtml] = useState('');
   const [text, setText] = useState('');
   const [issues, setIssues] = useState<PlaceholderIssue[]>([]);
-  const [as, setAs] = useState<string>('sample');
+  const [chosenAs, setAs] = useState<string>('sample');
+  const as = fixedAs ?? chosenAs;
   const [recipients, setRecipients] = useState<PreviewRecipientsResponse | null>(null);
   const [shownAs, setShownAs] = useState('');
   const [shownVersion, setShownVersion] = useState('');
@@ -397,14 +404,14 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
     <div className="preview-pane">
       <div className="preview-bar">
         <strong>{revision ? `Version ${revision.number}` : 'Current draft'}</strong>
-        <span className="muted small">Phone and desktop side by side. Each has its own width.</span>
-        <label className="small">Preview as{' '}
+        {!fixedAs && <span className="muted small">Phone and desktop side by side. Each has its own width.</span>}
+        {!fixedAs && <label className="small">Preview as{' '}
           <select value={as} onChange={(e) => setAs(e.target.value)}>
             {(recipients?.groups ?? [{ title: 'Built-in examples', recipients: SAMPLE_RECIPIENTS.map((r) => ({ id: r.id, label: r.label })) }]).map((g) => (
               <optgroup key={g.title} label={g.title}>{g.recipients.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</optgroup>
             ))}
           </select>
-        </label>
+        </label>}
         <button type="button" onClick={() => setShowText((v) => !v)}>{showText ? 'Show email' : 'Show plain text'}</button>
         {onClose && <button type="button" onClick={onClose}>Close preview</button>}
       </div>
@@ -426,7 +433,7 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
       )}
       <div className="preview-devices" style={showText ? { display: "none" } : undefined}>
         <DeviceFrame kind="phone" html={html} widths={PHONE_WIDTHS} initial={375} />
-        <DeviceFrame kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={desktopStart} />
+        {!fixedAs && <DeviceFrame kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={desktopStart} />}
       </div>
     </div>
   );
@@ -543,29 +550,88 @@ function VersionsPane({ campaignId, canEdit, onRestored }: { campaignId: string;
 function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; canEdit: boolean }) {
   const content = useEditor((s) => s.content);
   const editing = useEditor((s) => s.editing);
+  const focus = useEditor((s) => s.focus);
   const setEditing = useEditor((s) => s.setEditing);
+  const setFocus = useEditor((s) => s.setFocus);
+  const { conditionFields } = useContext(AudienceCtx);
+  const typeOf = (k: string) => conditionFields.find((f) => f.key === k)?.type;
   const active = activeVariants(content, audienceFields);
   const languages = activeLanguageVersions(content, audienceFields);
+  // segments made by the block rules of each language email: choosing one edits that email and dims the blocks the segment does not see
+  const made = derivedSegments(content, audienceFields, languages.map((v) => v.values[0] ?? ''), typeOf).rows.filter((r) => r.fields.length > 1 && r.samples !== null);
   if (active.length === 0 && languages.length === 0) {
     return content.versioning?.mode === 'conditions'
       ? <div className="version-bar" data-testid="version-bar"><span className="muted small">No language emails yet. Create the email for each language in the Segments tab, then come back to add blocks and choose who sees them.</span></div>
       : null;
   }
   const current = [...active, ...languages].find((v) => v.id === editing);
+  const value = focus ? `seg:${focus.code}` : current?.id ?? '';
+  function pick(v: string) {
+    if (v.startsWith('seg:')) {
+      const r = made.find((x) => `seg:${x.code}` === v);
+      const lang = r && languages.find((l) => l.values[0] === r.language);
+      if (!r || !lang) return;
+      setEditing(lang.id);
+      setFocus({ code: r.code, contact: Object.fromEntries(r.fields.map((k, i) => [k, r.samples![i] === '' ? null : r.samples![i]!])) });
+    } else setEditing(v || null);
+  }
   return (
     <div className="version-bar" data-testid="version-bar">
       <label>Editing version{' '}
-        <select value={current?.id ?? ''} onChange={(e) => setEditing(e.target.value || null)}>
+        <select value={value} onChange={(e) => pick(e.target.value)}>
           <option value="">Default version</option>
-          {languages.length > 0 && <optgroup label="Language defaults">{languages.map((v) => <option key={v.id} value={v.id}>{versionName(v)}</option>)}</optgroup>}
+          {languages.length > 0 && <optgroup label="Language emails">{languages.map((v) => <option key={v.id} value={v.id}>{versionName(v)}</option>)}</optgroup>}
+          {made.length > 0 && <optgroup label="Segments made by rules">{made.map((r) => <option key={r.key} value={`seg:${r.code}`}>{r.code}</option>)}</optgroup>}
           {active.length > 0 && <optgroup label="Segment copies">{active.map((v) => <option key={v.id} value={v.id}>{variantCode(v)} version</option>)}</optgroup>}
         </select>
       </label>
       <span className="muted small">
-        {current ? (current.kind === 'language' ? `You are editing the ${versionName(current)} email. Put every block its segments need here, then choose who sees each block.` : `You are editing the ${variantCode(current)} version. Only contacts in that segment receive it.`) : 'The Default version is sent to contacts in segments without a version of their own.'}
+        {focus && current ? `You are editing the ${versionName(current)} email, shown the way ${focus.code} sees it: blocks this segment does not see are dimmed. Changes here change the whole language email.`
+          : current ? (current.kind === 'language' ? `You are editing the ${versionName(current)} email. Put every block its segments need here, then choose who sees each block.` : `You are editing the ${variantCode(current)} version. Only contacts in that segment receive it.`) : 'The Default version is sent to contacts in segments without a version of their own.'}
         {current && !canEdit ? ' (view only)' : ''}
       </span>
     </div>
+  );
+}
+
+/** Versions tab: every segment on the left with its email; click one to see that email on the right. */
+function SegmentOverview({ campaignId }: { campaignId: string }) {
+  const d = useSegmentData(campaignId, 0);
+  const [picked, setPicked] = useState<string>('default');
+  const rows = d.rowList;
+  const row = rows.find((r) => r.key === picked);
+  const test = row ? d.testFor(row) : undefined;
+  const fixedAs = picked === 'default' ? 'sample' : test ? `test:${test.id}` : '';
+  const flushed = useEditor((s) => s.saveState);
+  return (
+    <section className="seg-panel tint-map" aria-labelledby="seg-overview-title" data-testid="segment-overview">
+      <h2 id="seg-overview-title">Emails by segment</h2>
+      {!d.mode && <p className="muted">No segments yet. Choose how to build the versions in the Segments tab.</p>}
+      {d.mode && (
+        <div className="seg-overview">
+          <ul className="seg-list" aria-label="Segments">
+            <li><button type="button" aria-pressed={picked === 'default'} onClick={() => setPicked('default')}><span className="seg-name">Everyone else</span><span className="muted small">Default email</span></button></li>
+            {rows.map((r) => {
+              const res = d.resolve(r, d.content);
+              return (
+                <li key={r.key}>
+                  <button type="button" aria-pressed={picked === r.key} onClick={() => setPicked(r.key)}>
+                    <span className="seg-name">{r.code}</span>
+                    <span className="muted small">{d.nameOf(res.variant?.id)} · {res.shown} of {res.total} blocks{d.routeOf(r) ? ' · set by you' : ''}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="seg-view" data-testid="segment-view">
+            {rows.length === 0 && <p className="muted small">Segments you create in the Segments tab, and the ones your block rules make, are listed here.</p>}
+            {fixedAs
+              ? <PreviewPane key={`${fixedAs}:${flushed === 'saved' ? 's' : 'd'}`} campaignId={campaignId} fixedAs={fixedAs} />
+              : <p className="muted">There is no test contact for {row?.code} yet, so there is nothing to show. Build it in the Test audience on the Segments tab.</p>}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -709,6 +775,7 @@ export function EditorPage() {
             </button>
           ))}
         </div>
+        {tab === 'email' && <button type="button" className="primary" data-testid="next-tab" onClick={() => setTab('preview')}>Next →</button>}
       </div>
 
       {tab === 'email' && <VersionBar audienceFields={audienceFields} canEdit={canEdit} />}
@@ -734,9 +801,10 @@ export function EditorPage() {
           <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>
         </DndContext>
       )}
+
       {tab === 'segments' && <div className="tab-body"><SegmentsPane campaignId={id} canEdit={canEdit && s.status === 'draft'} refreshKey={segmentsRefresh} onOpenVersion={() => setTab('email')} onContinue={() => setTab('email')} /></div>}
-      {tab === 'preview' && <div className="tab-body"><PreviewPane campaignId={id} /></div>}
-      {tab === 'versions' && <div className="tab-body"><VersionsPane campaignId={id} canEdit={canEdit} onRestored={() => setTab('email')} /></div>}
+      {tab === 'preview' && <div className="tab-body"><PreviewPane campaignId={id} /><div className="seg-next-inline"><button type="button" className="primary" data-testid="next-tab" onClick={() => setTab('versions')}>Next →</button></div></div>}
+      {tab === 'versions' && <div className="tab-body"><SegmentOverview campaignId={id} /><VersionsPane campaignId={id} canEdit={canEdit} onRestored={() => setTab('email')} /></div>}
     </div>
     </AudienceCtx.Provider>
   );

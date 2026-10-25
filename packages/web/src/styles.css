@@ -378,3 +378,23 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .seg-next { display: flex; justify-content: flex-end; margin: 4px 0 24px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 640px) { .seg-panel { padding: 14px; } }
+
+/* AND / OR between rules */
+.cond-join { display: flex; align-items: center; gap: 8px; margin: 2px 0 2px 14px; }
+.cond-join::before, .cond-join::after { content: ''; flex: 1; border-top: 1px dashed var(--border); }
+.cond-join select { flex: 0 0 auto; width: auto; min-width: 72px; text-align: center; font-weight: 700; letter-spacing: 0.06em; font-size: 0.8rem; padding: 2px 8px; border-radius: 999px; border: 1.5px solid var(--accent); color: var(--accent-text); background: var(--accent); cursor: pointer; }
+
+/* the "Preview as" bar stays visible while the preview scrolls */
+.tab-body > .preview-pane > .preview-bar { position: sticky; top: -16px; z-index: 6; background: var(--bg); padding: 10px 0; margin: -16px 0 6px; border-bottom: 1px solid var(--border); }
+
+/* Versions tab: segments on the left, their email on the right */
+.seg-overview { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 24px; }
+.seg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 70vh; overflow: auto; }
+.seg-list button { width: 100%; text-align: left; display: block; border-radius: 10px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); }
+.seg-list button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.seg-list .seg-name { font-weight: 700; display: block; }
+.seg-view { position: sticky; top: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: var(--surface); min-width: 0; }
+.dim-block { opacity: 0.38; }
+.seg-next-inline { display: flex; justify-content: flex-end; margin: 16px; }
+@media (max-width: 800px) { .seg-overview { grid-template-columns: 1fr; } }
+.canvas-block.dim-block .block-bar { display: flex; }

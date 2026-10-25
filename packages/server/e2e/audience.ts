@@ -225,12 +225,32 @@ try {
   await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
   await page.getByLabel('Heading', { exact: true }).fill('SA only');
   await page.getByLabel('Who sees this block').selectOption('some');
-  await page.getByTestId('show-when').getByLabel('Value').fill('SA');
+  await page.getByTestId('show-when').getByLabel('Value').fill('SA, EG'); // several values in one box: two segments, not one
   await page.getByText('All changes saved').waitFor();
   await page.getByRole('tab', { name: 'Segments' }).click();
-  for (const code of ['UAE-ar', 'SA-ar', 'Default-ar']) await page.getByRole('cell', { name: new RegExp(`^${code}`) }).first().waitFor();
+  await page.getByRole('heading', { name: 'Segments & Email Mapping' }).waitFor();
+  for (const code of ['UAE-ar', 'SA-ar', 'EG-ar', 'Default-ar']) await page.getByRole('cell', { name: new RegExp(`^${code}`) }).first().waitFor();
+  assert((await page.getByRole('cell', { name: /SA, EG/ }).count()) === 0, 'comma separated values make separate segments');
   await tests2.getByRole('cell', { name: 'Default-ar', exact: true }).waitFor({ timeout: 30000 }); // test contacts for the new segments are made for you
-  ok('block conditions add segments (UAE-ar, SA-ar, Default-ar) to the Segments tab and their test contacts are built');
+  ok('block conditions add segments (UAE-ar, SA-ar, EG-ar from "SA, EG", Default-ar) to the Segments tab and their test contacts are built');
+
+  // a language added in "Which email each segment receives" also gets its test contact
+  await page.locator('#typed-language').fill('fr');
+  await page.getByRole('button', { name: 'Create this email' }).click(); // opens the Email tab on the new language email
+  await page.getByTestId('version-bar').getByText('You are editing the fr default').waitFor();
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  await tests2.getByRole('cell', { name: 'fr', exact: true }).waitFor();
+  ok('a language added in the mapping section appears in the test audience');
+
+  // the Email tab lists the segments made by rules; choosing one dims the blocks it does not see
+  await page.getByRole('tab', { name: 'Email' }).click();
+  const editingVersion = page.getByTestId('version-bar').getByLabel('Editing version');
+  await editingVersion.locator('option', { hasText: 'UAE-ar' }).waitFor({ state: 'attached' });
+  await editingVersion.selectOption({ label: 'ar default' });
+  await editingVersion.selectOption({ label: 'UAE-ar' });
+  await page.getByTestId('hidden-for').first().waitFor();
+  assert((await page.getByTestId('hidden-for').first().innerText()).includes('UAE-ar'), 'blocks the segment does not see are marked');
+  ok('segments made by rules are in the editing drop-down; their hidden blocks are dimmed');
 
   await page.getByRole('tab', { name: 'Preview' }).click();
   const shownFor = async (code: string): Promise<{ shown: number; total: number }> => {
@@ -258,6 +278,20 @@ try {
   await page.getByTestId('segments-next').click();
   await page.getByTestId('version-bar').waitFor(); // Next goes to the Email tab
   ok('a conditional segment can be sent the Default email instead; Next opens the Email tab');
+
+  // Next on every tab; "Preview as" stays in view; the Versions tab lists segments with a quick view
+  await page.getByTestId('next-tab').click();
+  await page.getByLabel('Preview as').waitFor();
+  await page.locator('.tab-body').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  const box = await page.getByLabel('Preview as').boundingBox();
+  assert(!!box && box.y >= 0 && box.y < 250, `Preview as stays in view while scrolling (y=${box?.y})`);
+  await page.getByTestId('next-tab').click(); // the Preview tab's Next is at the end of the page
+  await page.getByTestId('segment-overview').waitFor();
+  await page.getByTestId('segment-overview').getByRole('button', { name: /^UAE-ar/ }).click();
+  await page.getByTestId('segment-view').getByText('UAE-ar (test contact)').waitFor();
+  await page.getByTestId('segment-overview').getByRole('button', { name: /^SA-ar/ }).click();
+  await page.getByTestId('segment-view').getByText('SA-ar (test contact)').waitFor();
+  ok('Next moves through Segments, Email, Preview and Versions; Preview as stays in view; Versions lists segments with a quick preview');
 
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');

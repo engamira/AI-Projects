@@ -37,7 +37,7 @@ function RuleRow({ rule, fields, disabled, onChange, onRemove, canRemove }: {
           onChange={(e) => onChange({ ...rule, values: e.target.value.split(',').map((s) => s.trimStart()) })} />
       )}
       {needsValue(rule.op) && type !== 'boolean' && !allowsSeveralValues(rule.op) && (
-        <input aria-label="Value" disabled={disabled} type={type === 'date' ? 'date' : type === 'number' ? 'number' : 'text'} value={rule.values[0] ?? ''}
+        <input aria-label="Value" disabled={disabled} type={type === 'date' ? 'date' : type === 'number' ? 'number' : 'text'} value={rule.values[0] ?? ''} placeholder={type === 'text' && (rule.op === 'is' || rule.op === 'is_not') ? 'e.g. UAE, SA' : ''}
           onChange={(e) => onChange({ ...rule, values: [e.target.value] })} />
       )}
       {canRemove && !disabled && <button type="button" className="link danger" aria-label="Remove this rule" onClick={onRemove}>Remove</button>}
@@ -60,15 +60,23 @@ export function ConditionBuilder({ value, fields, onChange, disabled, depth = 1,
     <div className={`cond-group depth-${depth}`} role="group" aria-label={depth === 1 ? 'Conditions' : 'Group of conditions'}>
       <div className="cond-head">
         <span>Show when</span>
-        <select aria-label="Match" disabled={disabled} value={value.match} onChange={(e) => onChange({ ...value, match: e.target.value as 'all' | 'any' })}>
-          <option value="all">all of these are true (AND)</option>
-          <option value="any">any of these is true (OR)</option>
-        </select>
         {onRemoveGroup && !disabled && <button type="button" className="link danger" onClick={onRemoveGroup}>Remove group</button>}
       </div>
-      {value.rules.map((r, i) => (isGroup(r)
-        ? <ConditionBuilder key={i} value={r} fields={fields} depth={depth + 1} disabled={disabled} onChange={(g) => setRule(i, g)} onRemoveGroup={() => removeAt(i)} />
-        : <RuleRow key={i} rule={r} fields={fields} disabled={disabled} canRemove={value.rules.length > 1 || depth > 1} onChange={(x) => setRule(i, x)} onRemove={() => removeAt(i)} />))}
+      {value.rules.map((r, i) => (
+        <div key={i}>
+          {i > 0 && (
+            <div className="cond-join">
+              <select aria-label={`Join rule ${i} and ${i + 1} with`} disabled={disabled} value={value.match} onChange={(e) => onChange({ ...value, match: e.target.value as 'all' | 'any' })}>
+                <option value="all">AND</option>
+                <option value="any">OR</option>
+              </select>
+            </div>
+          )}
+          {isGroup(r)
+            ? <ConditionBuilder value={r} fields={fields} depth={depth + 1} disabled={disabled} onChange={(g) => setRule(i, g)} onRemoveGroup={() => removeAt(i)} />
+            : <RuleRow rule={r} fields={fields} disabled={disabled} canRemove={value.rules.length > 1 || depth > 1} onChange={(x) => setRule(i, x)} onRemove={() => removeAt(i)} />}
+        </div>
+      ))}
       {!disabled && (
         <div className="cond-add">
           <button type="button" disabled={total >= MAX_CONDITION_RULES} onClick={() => onChange({ ...value, rules: [...value.rules, emptyRule(first.key)] })}>＋ Add a rule</button>

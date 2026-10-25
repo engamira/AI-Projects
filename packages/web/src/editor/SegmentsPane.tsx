@@ -1,27 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  activeLanguageVersions, activeVariants, blocksShownFor, derivedSegments, parseCell, pickVersion, routeKeyFor, segmentKey, segmentCode, variantCode, versionName,
-  type ContactField, type EmailContent, type SegmentsResponse, type TestAudienceResult, type TestContactDto,
-} from '@cl/shared';
+import { useState } from 'react';
+import { parseCell, variantCode, versionName, segmentKey, type TestAudienceResult } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
 import { SegmentFieldPicker } from '../components/SegmentFieldPicker';
 import { useEditor } from './store';
+import { plainLabel, useSegmentData, type Cell, type Mode, type SegmentRow } from './segmentData';
+
+export { modeOf } from './segmentData';
 
 // The Segments tab: how the versions are built, who the campaign is for, the test audience, and which email each segment receives.
-
-type AudienceInfo = { audience: { fields: string[] }; available: ContactField[]; test: TestContactDto[] };
-type Mode = 'conditions' | 'copies';
-type Cell = string | number | boolean | null;
-
-const plainLabel = (label: string): string => label.replace(/ \(.*\)$/, '');
-
-/** The build choice of a campaign; none until the Builder chooses (older campaigns are read from the versions they already have). */
-export function modeOf(content: EmailContent): Mode | undefined {
-  if (content.versioning) return content.versioning.mode;
-  if (content.variants?.length) return content.variants.some((v) => v.kind === 'language') ? 'conditions' : 'copies';
-  return undefined;
-}
 
 /** Add a field of your own (for example "Interest") while setting up a campaign; it is then available to every campaign. */
 function AddFieldInline({ onAdded }: { onAdded: () => void }) {
@@ -50,7 +37,8 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   campaignId: string; canEdit: boolean; refreshKey: number; onOpenVersion: () => void; onContinue: () => void;
 }) {
   const { can } = useSession();
-  const content = useEditor((s) => s.content);
+  const d = useSegmentData(campaignId, refreshKey);
+  const { content, info, load, mode, chosen, chosenFields, test, languageField, routes, copies, languages, unused, found, rowList, tooMany } = d;
   const setVersioning = useEditor((s) => s.setVersioning);
   const setRoute = useEditor((s) => s.setRoute);
   const addVariant = useEditor((s) => s.addVariant);
@@ -58,8 +46,6 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   const removeVariant = useEditor((s) => s.removeVariant);
   const setEditing = useEditor((s) => s.setEditing);
 
-  const [info, setInfo] = useState<AudienceInfo | null>(null);
-  const [segs, setSegs] = useState<SegmentsResponse | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [languagesText, setLanguagesText] = useState('');
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -69,31 +55,15 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    const i = await api<AudienceInfo>('GET', `/api/campaigns/${campaignId}/audience`);
-    setInfo(i);
-    if (can('audience.manage') && i.audience.fields.length) setSegs(await api<SegmentsResponse>('GET', `/api/audience/segments?fields=${i.audience.fields.join(',')}`));
-    else setSegs(null);
-  }, [campaignId, can]);
-  useEffect(() => { load().catch((e) => setError(errorText(e))); }, [load, refreshKey]);
-
   const guarded = async (fn: () => Promise<void>) => {
     setError('');
     setBusy(true);
     try { await fn(); await load(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
-
-  const mode = modeOf(content);
-  const chosen = info?.audience.fields ?? [];
-  const chosenFields = chosen.map((k) => info?.available.find((f) => f.key === k)).filter((f): f is ContactField => !!f);
-  const test = info?.test ?? [];
-  const languageField = mode === 'conditions' ? chosen[0] : undefined;
-  const typeOf = (k: string) => info?.available.find((f) => f.key === k)?.type;
-  const routes = content.versioning?.routes ?? {};
-  const keepRoutes = routes && Object.keys(routes).length ? { routes } : {};
+  const keepRoutes = Object.keys(routes).length ? { routes } : {};
 
   function confirmFieldChange(next: string[]): boolean {
-    const hasVersions = activeVariants(content, chosen).length > 0;
+    const hasVersions = copies.length > 0;
     const parts = [test.length ? 'removes the test audience made for this campaign' : '', hasVersions ? 'stops using the segment versions you wrote (they are kept, and used again if you choose the same fields)' : ''].filter(Boolean);
     return next.join() === chosen.join() || parts.length === 0 || window.confirm(`Changing the fields ${parts.join(' and ')}. Continue?`);
   }
@@ -126,23 +96,12 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
     if (m === 'values') { setValues({}); setLanguagesText(''); }
   });
 
-  // ----- versions -----
-  const copies = activeVariants(content, chosen);
-  const languages = mode === 'conditions' && languageField ? activeLanguageVersions(content, chosen) : [];
-  const unused = (content.variants ?? []).filter((v) => !copies.includes(v) && !languages.includes(v));
-
-  const found = new Map<string, { value: string; contacts: number }>();
-  if (languageField) {
-    const at = chosen.indexOf(languageField);
-    const note1 = (raw: unknown, n: number) => {
-      const v = raw === null || raw === undefined ? '' : String(raw).trim();
-      if (!v) return;
-      const k = v.toLowerCase();
-      found.set(k, { value: found.get(k)?.value ?? v, contacts: (found.get(k)?.contacts ?? 0) + n });
-    };
-    for (const s of segs?.segments ?? []) note1(s.values[at], s.total);
-    for (const c of test) note1(c.data[languageField], 0);
-    for (const v of languages) note1(v.values[0], 0);
+  /** A language or segment added here gets its made-up test contact at once, so it appears in the test audience and in Preview as. */
+  async function addTestFor(vals: Record<string, string[]>) {
+    try {
+      await api('POST', `/api/campaigns/${campaignId}/test-audience`, { mode: 'values', values: vals });
+      await load();
+    } catch (e) { setError(errorText(e)); }
   }
 
   function created(id: string | null) {
@@ -151,56 +110,25 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   }
   function createCopy(vals: Cell[]) { setError(''); created(addVariant(chosen, vals, copyFrom || null)); }
   function createLanguage(value: string) { setError(''); if (languageField) created(addLanguageVersion(languageField, value, copyFrom || null)); }
-  function createTyped() {
+  async function createTypedLanguage() {
+    const value = typedLanguage.trim();
+    if (!value || !languageField) return;
+    setTypedLanguage('');
+    await addTestFor({ [languageField]: [value] });
+    createLanguage(value);
+  }
+  async function createTyped() {
     const vals: Cell[] = [];
     for (const f of chosenFields) {
       const cell = parseCell(f, typed[f.key] ?? '');
       if ('error' in cell) { setError(cell.error + '.'); return; }
       vals.push(cell.value);
     }
+    const raw = Object.fromEntries(chosenFields.map((f) => [f.key, [(typed[f.key] ?? '').trim()]]));
     setTyped({});
+    await addTestFor(raw);
     createCopy(vals);
   }
-
-  // ----- which email each segment receives -----
-  type Row = { key: string; code: string; values: Cell[]; fields: string[]; total?: number; eligible?: number; hasTest: boolean };
-  const rowList: Row[] = [];
-  const testCodes = new Set(test.map((c) => c.code.toLowerCase()));
-  if (mode === 'conditions' && languageField) {
-    const d = derivedSegments(content, chosen, [...found.values()].map((l) => l.value));
-    for (const r of d.rows) {
-      const at = segs?.segments.find((s) => segmentKey(chosen, s.values) === segmentKey([languageField], [r.language]));
-      rowList.push({ key: r.key, code: r.code, values: r.values.map((x) => x || null), fields: r.fields, hasTest: testCodes.has(r.code.toLowerCase()) || (r.fields.length === 1 && testCodes.has(segmentCode([r.language]).toLowerCase())), ...(r.fields.length === 1 && at ? { total: at.total, eligible: at.eligible } : {}) });
-    }
-  } else if (mode === 'copies') {
-    const seen = new Set<string>();
-    const add = (vals: Cell[], extra: Partial<Row> = {}) => {
-      const key = segmentKey(chosen, vals);
-      if (seen.has(key)) return;
-      seen.add(key);
-      const code = segmentCode(vals);
-      rowList.push({ key, code, values: vals, fields: chosen, hasTest: testCodes.has(code.toLowerCase()), ...extra });
-    };
-    for (const s of segs?.segments ?? []) if (!s.values.every((v) => v === null || v === '')) add(s.values, { total: s.total, eligible: s.eligible });
-    for (const c of test) add(chosenFields.map((f) => c.data[f.key] ?? null));
-    for (const v of copies) add(v.values);
-  }
-  const contactOf = (r: Row) => Object.fromEntries(r.fields.map((k, i) => [k, r.values[i] ?? null]));
-  const withoutRoutes: EmailContent = (() => { const { routes: _r, ...rest } = content.versioning ?? { mode: 'copies' as Mode }; return { ...content, versioning: rest as EmailContent['versioning'] }; })();
-  const resolve = (r: Row, c: EmailContent) => {
-    const contact = contactOf(r);
-    const pick = pickVersion(c, chosen, contact);
-    const src = pick.variant ?? content;
-    return { ...pick, shown: blocksShownFor(src.blocks, contact, typeOf).length, total: src.blocks.length };
-  };
-  const nameOf = (variantId: string | null | undefined): string => {
-    const v = (content.variants ?? []).find((x) => x.id === variantId);
-    return v ? `${versionName(v)}${v.kind ? ' email' : ' version'}` : 'Default email';
-  };
-  const routeOf = (r: Row): string => {
-    const k = routeKeyFor(content, chosen, contactOf(r));
-    return routes[k] ?? '';
-  };
 
   const emailOptions = (
     <>
@@ -210,16 +138,16 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
     </>
   );
 
-  const emailCell = (r: Row) => {
-    const auto = resolve(r, withoutRoutes);
-    const now = resolve(r, content);
+  const emailCell = (r: SegmentRow) => {
+    const auto = d.resolve(r, d.withoutRoutes);
+    const now = d.resolve(r, content);
     return (
       <td>
-        <select aria-label={`Email for ${r.code}`} disabled={!canEdit} value={routeOf(r)} onChange={(e) => setRoute(routeKeyFor(content, chosen, contactOf(r)), e.target.value || null)}>
-          <option value="">Automatic · {nameOf(auto.variant?.id)}</option>
+        <select aria-label={`Email for ${r.code}`} disabled={!canEdit} value={d.routeOf(r)} onChange={(e) => setRoute(d.routeKey(r), e.target.value || null)}>
+          <option value="">Automatic · {d.nameOf(auto.variant?.id)}</option>
           {emailOptions}
         </select>
-        <div className="muted small">{now.shown} of {now.total} blocks shown{routeOf(r) ? ' · set by you' : ''}</div>
+        <div className="muted small">{now.shown} of {now.total} blocks shown{d.routeOf(r) ? ' · set by you' : ''}</div>
       </td>
     );
   };
@@ -229,7 +157,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
 
   return (
     <div className="audience-pane">
-      {error && <p className="error" role="alert">{error}</p>}
+      {(error || d.loadError) && <p className="error" role="alert">{error || d.loadError}</p>}
       {!canEdit && <p className="muted small">Only a Builder can change this, and only while the campaign is a draft.</p>}
 
       <section className="seg-panel tint-choice" aria-labelledby="seg-choice-title" data-testid="segment-versions">
@@ -347,13 +275,13 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
               {canEdit && (
                 <div className="inline-form">
                   <div><label htmlFor="typed-language">Another language</label><input id="typed-language" value={typedLanguage} onChange={(e) => setTypedLanguage(e.target.value)} placeholder="e.g. fr" /></div>
-                  <div className="inline-form-actions"><button type="button" disabled={!typedLanguage.trim()} onClick={() => { createLanguage(typedLanguage.trim()); setTypedLanguage(''); }}>Create this email</button></div>
+                  <div className="inline-form-actions"><button type="button" disabled={!typedLanguage.trim()} onClick={() => void createTypedLanguage()}>Create this email</button></div>
                 </div>
               )}
             </>
           )}
 
-          <h3>Segments</h3>
+          <h3>Segments &amp; Email Mapping</h3>
           <div className="table-scroll">
             <table>
               <thead><tr><th>Segment</th><th>Contacts</th><th>Email it receives</th>{mode === 'copies' && <th></th>}</tr></thead>
@@ -364,7 +292,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
                   const code = own ? variantCode(own) : r.code;
                   return (
                     <tr key={r.key}>
-                      <td><strong>{code}</strong>{!r.hasTest && <div className="muted small">no test contact yet</div>}</td>
+                      <td><strong>{code}</strong>{!r.hasTest && <div className="muted small">{r.samples === null && mode === 'conditions' ? 'no test contact possible (an earlier rule always wins)' : 'no test contact yet'}</div>}</td>
                       <td>{r.total !== undefined ? `${r.total} (${r.eligible} eligible)` : <span className="muted small">{r.hasTest ? 'test contact only' : '—'}</span>}</td>
                       {emailCell(r)}
                       {mode === 'copies' && (
@@ -380,11 +308,12 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
               </tbody>
             </table>
           </div>
-          {mode === 'conditions' && <p className="muted small">These segments come from the rules on your blocks (for example blocks shown only to Country UAE or SA). "Default-en" means English contacts in any other country. Rules that use "contains", "greater than" and similar comparisons still work when sending and previewing, but they are not listed as segments. Test contacts for these segments are made for you.</p>}
+          {tooMany && <p className="error" role="alert">There are more than 2000 segments, so the list is cut short. Use fewer values in your rules.</p>}
+          {mode === 'conditions' && <p className="muted small">These segments come from the rules on your blocks. Each comparison has a short name: "UAE" (is), "not UAE", "has ua" (contains), "no ua" (does not contain), "over 10" and "under 10" (numbers), "after 2025-01-01" and "before 2025-01-01" (dates), "blank" and "filled". A contact belongs to the first one it meets, and "Default" means none of them, so "Default-en" is English contacts in any other case. Test contacts for these segments are made for you.</p>}
 
           {mode === 'copies' && canEdit && (
             <>
-              <p className="small" style={{ marginTop: 12 }}><strong>Another segment.</strong> Type one value for each field to write a separate copy for a segment that is not in the list yet.</p>
+              <p className="small" style={{ marginTop: 12 }}><strong>Another segment.</strong> Type one value for each field to write a separate copy for a segment that is not in the list yet. Its test contact is made too.</p>
               <div className="map-grid">
                 {chosenFields.map((f) => (
                   <label key={f.key}>{plainLabel(f.label)}
@@ -392,7 +321,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
                   </label>
                 ))}
               </div>
-              <p><button type="button" disabled={chosenFields.some((f) => !(typed[f.key] ?? '').trim())} onClick={createTyped}>Create this version</button></p>
+              <p><button type="button" disabled={chosenFields.some((f) => !(typed[f.key] ?? '').trim())} onClick={() => void createTyped()}>Create this version</button></p>
             </>
           )}
           {unused.length > 0 && (
@@ -406,9 +335,8 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
       )}
 
       {!noChoice && (
-        <div className="seg-next"><button type="button" className="primary" data-testid="segments-next" onClick={onContinue}>Next</button></div>
+        <div className="seg-next"><button type="button" className="primary" data-testid="segments-next" onClick={onContinue}>Next →</button></div>
       )}
     </div>
   );
 }
-

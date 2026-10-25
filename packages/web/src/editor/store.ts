@@ -30,6 +30,8 @@ type EditorState = {
   content: EmailContent;
   /** The version being edited: null = the Default, otherwise the id of a segment version. */
   editing: string | null;
+  /** A segment made by block rules whose view of the language email is being shown (blocks it does not see are dimmed). */
+  focus: { code: string; contact: Record<string, string | number | boolean | null> } | null;
   version: number;
   past: EmailContent[];
   future: EmailContent[];
@@ -51,6 +53,7 @@ type EditorState = {
   addLanguageVersion: (languageField: string, value: string, copyFrom: string | null) => string | null;
   /** How this campaign builds versions, and which field holds the language. */
   setVersioning: (v: Versioning) => void;
+  setFocus: (focus: EditorState['focus']) => void;
   /** Sends a segment the email of a version (or the Default), or back to the automatic choice (null). */
   setRoute: (segmentKey: string, target: string | null) => void;
   /** Shows a block only to contacts who meet the condition (null = everyone). */
@@ -108,6 +111,7 @@ export const useEditor = create<EditorState>((set, get) => {
     name: '',
     content: emptyDoc(),
     editing: null,
+    focus: null,
     version: 0,
     past: [],
     future: [],
@@ -124,6 +128,7 @@ export const useEditor = create<EditorState>((set, get) => {
         name: dto.name,
         content: dto.draft.content,
         editing: null,
+        focus: null,
         version: dto.draft.version,
         past: [],
         future: [],
@@ -136,7 +141,8 @@ export const useEditor = create<EditorState>((set, get) => {
     setName: (name) => set({ name }),
     select: (id) => set({ selectedId: id }),
 
-    setEditing: (variantId) => set({ editing: variantId, selectedId: null }),
+    setEditing: (variantId) => set({ editing: variantId, focus: null, selectedId: null }),
+    setFocus: (focus) => set({ focus }),
 
     addVariant: (fields, values, copyFrom) => {
       const { content } = get();

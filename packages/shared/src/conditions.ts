@@ -87,6 +87,11 @@ function order(type: ContactFieldType, raw: Value, v: string): number | null {
   return null;
 }
 
+/** The values of a rule as a list: several values may be typed in one box separated by commas ("UAE, SA"). */
+export function valueList(values: string[]): string[] {
+  return values.flatMap((v) => v.split(',')).map((v) => v.trim()).filter((v) => v !== '');
+}
+
 function evalRule(r: ConditionRule, get: (field: string) => Value, typeOf: (field: string) => ContactFieldType | undefined): boolean {
   const type = typeOf(r.field) ?? 'text';
   const raw = get(r.field);
@@ -94,10 +99,11 @@ function evalRule(r: ConditionRule, get: (field: string) => Value, typeOf: (fiel
   if (r.op === 'is_not_blank') return !isBlank(raw);
   if (isBlank(raw)) return r.op === 'is_not' || r.op === 'not_contains'; // a blank value is "not" anything
   const values = r.values.filter((v) => v.trim() !== '');
+  const list = valueList(r.values); // "is" and "is not" also accept several values separated by commas (UAE, SA)
   switch (r.op) {
-    case 'is': return values.length > 0 && same(type, raw, values[0]!);
-    case 'is_not': return !(values.length > 0 && same(type, raw, values[0]!));
-    case 'is_one_of': return values.some((v) => same(type, raw, v));
+    case 'is': return list.length > 0 && list.some((v) => same(type, raw, v));
+    case 'is_not': return !(list.length > 0 && list.some((v) => same(type, raw, v)));
+    case 'is_one_of': return list.some((v) => same(type, raw, v));
     case 'contains': return values.length > 0 && String(raw).toLowerCase().includes(values[0]!.trim().toLowerCase());
     case 'not_contains': return !(values.length > 0 && String(raw).toLowerCase().includes(values[0]!.trim().toLowerCase()));
     case 'greater': { const c = values.length ? order(type, raw, values[0]!) : null; return c !== null && c > 0; }
@@ -117,7 +123,7 @@ export function describeCondition(c: ConditionGroup, labelOf: (field: string) =>
     if (isGroup(r)) return describeCondition(r, labelOf, typeOf, true);
     const type = typeOf(r.field) ?? 'text';
     const vals = r.values.filter((v) => v.trim() !== '');
-    const joined = r.op === 'is_one_of' ? vals.join(', ') : vals[0] ?? '';
+    const joined = r.op === 'is_one_of' || r.op === 'is' || r.op === 'is_not' ? valueList(vals).join(' or ') : vals[0] ?? '';
     return `${labelOf(r.field)} ${comparisonLabel(r.op, type)}${needsValue(r.op) ? ` ${joined || '…'}` : ''}`;
   });
   const text = parts.join(c.match === 'all' ? ' and ' : ' or ');

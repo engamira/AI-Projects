@@ -265,7 +265,7 @@ export type TestAudienceRequest = {
   /** For mode "values": the values for each segment field (field key -> values). Example: country UAE, language en and ar adds UAE-en and UAE-ar. */
   values?: Record<string, string[]>;
   /** For mode "combos": exact combinations (fields and one list of values per combination), used for the segments that block conditions create. '' = any other value. */
-  combos?: { fields: string[]; rows: string[][] };
+  combos?: { fields: string[]; rows: string[][]; /** The name of each combination (default: its values joined by dashes, 'Default' for blank). */ codes?: string[] };
 };
 export type TestAudienceResult = { contacts: TestContactDto[]; added: number; alreadyThere: number };
 export const TEST_AUDIENCE_MAX = 2000;
