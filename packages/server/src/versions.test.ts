@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  activeLanguageVersions, blocksShownFor, describeCondition, evaluateCondition, pickVersion, validateCondition, type Comparison, type ConditionGroup,
   blockDefinition, cloneContent, createInstance, emptyContent, flatContent, newVariant, pickVariant, segmentKey, validateContent, versionOf,
   type EmailContent, type TestContactDto,
 } from '@cl/shared';
@@ -209,5 +210,163 @@ describe('saving, previewing and who may change what', () => {
     const dup = (await builder.post(`/api/campaigns/${id}/duplicate`)).body;
     expect(dup.draft.content.variants).toHaveLength(1);
     expect(dup.draft.content.variants[0].id).not.toBe(back.draft.content.variants[0].id);
+  });
+});
+
+
+describe('conditions on blocks', () => {
+  const get = (c: Record<string, string | number | boolean | null>) => (f: string) => c[f];
+  const types = (f: string) => ({ country: 'text', language: 'text', orders: 'number', since: 'date', vip: 'boolean' } as const)[f as 'country'];
+  const rule = (field: string, op: Comparison, ...values: string[]) => ({ field, op, values });
+  const all = (...rules: ConditionGroup['rules']): ConditionGroup => ({ match: 'all', rules });
+  const any = (...rules: ConditionGroup['rules']): ConditionGroup => ({ match: 'any', rules });
+
+  it('compares text without caring about capitals, and numbers, dates and yes/no by their kind', () => {
+    const uae = { country: ' uae ', language: 'AR', orders: 12, since: '2024-05-01', vip: true };
+    const ev = (c: ConditionGroup, who = uae) => evaluateCondition(c, get(who), types);
+    expect(ev(all(rule('country', 'is', 'UAE')))).toBe(true);
+    expect(ev(all(rule('country', 'is_not', 'UAE')))).toBe(false);
+    expect(ev(all(rule('country', 'is_one_of', 'KSA', 'uae')))).toBe(true);
+    expect(ev(all(rule('country', 'contains', 'ua')))).toBe(true);
+    expect(ev(all(rule('country', 'not_contains', 'ua')))).toBe(false);
+    expect(ev(all(rule('orders', 'greater', '10')))).toBe(true);
+    expect(ev(all(rule('orders', 'less', '10')))).toBe(false);
+    expect(ev(all(rule('orders', 'greater', '9'), rule('orders', 'less', '20')))).toBe(true);
+    expect(ev(all(rule('since', 'less', '2025-01-01')))).toBe(true); // before
+    expect(ev(all(rule('since', 'greater', '2025-01-01')))).toBe(false); // after
+    expect(ev(all(rule('vip', 'is', 'yes')))).toBe(true);
+    expect(ev(all(rule('vip', 'is', 'no')))).toBe(false);
+    expect(ev(all(rule('vip', 'is_not', 'no')))).toBe(true);
+  });
+
+  it('blank values: blank, not blank, and "is not" a value', () => {
+    const none = { country: null, language: '', orders: null, since: null, vip: null };
+    const ev = (c: ConditionGroup) => evaluateCondition(c, get(none), types);
+    expect(ev(all(rule('country', 'is_blank')))).toBe(true);
+    expect(ev(all(rule('language', 'is_blank')))).toBe(true);
+    expect(ev(all(rule('country', 'is_not_blank')))).toBe(false);
+    expect(ev(all(rule('country', 'is', 'UAE')))).toBe(false);
+    expect(ev(all(rule('country', 'is_not', 'UAE')))).toBe(true);
+    expect(ev(all(rule('orders', 'greater', '1')))).toBe(false);
+  });
+
+  it('AND, OR and groups', () => {
+    const c = { country: 'KSA', language: 'ar', orders: 0, since: null, vip: true };
+    const g = all(any(rule('country', 'is', 'UAE'), rule('country', 'is', 'KSA')), rule('vip', 'is', 'yes'));
+    expect(evaluateCondition(g, get(c), types)).toBe(true);
+    expect(evaluateCondition(g, get({ ...c, vip: false }), types)).toBe(false);
+    expect(evaluateCondition(g, get({ ...c, country: 'EG' }), types)).toBe(false);
+    expect(describeCondition(g, (k) => k.toUpperCase(), types)).toBe('(COUNTRY is UAE or COUNTRY is KSA) and VIP is yes');
+  });
+
+  it('rejects malformed conditions', () => {
+    expect(validateCondition(all(rule('country', 'is', 'UAE')))).toBeNull();
+    expect(validateCondition({ match: 'all', rules: [] })).toContain('at least one');
+    expect(validateCondition({ match: 'maybe', rules: [rule('country', 'is', 'x')] })).toContain('all');
+    expect(validateCondition(all({ field: 'Country!', op: 'is', values: ['x'] }))).toContain('invalid field');
+    expect(validateCondition(all({ field: 'country', op: 'matches', values: ['x'] } as never))).toContain('unknown comparison');
+    expect(validateCondition(all({ field: 'country', op: 'is', values: [] }))).toContain('needs a value');
+    let deep: ConditionGroup = all(rule('country', 'is', 'x'));
+    for (let i = 0; i < 4; i++) deep = all(deep);
+    expect(validateCondition(deep)).toContain('nested');
+    const many = all(...Array.from({ length: 21 }, () => rule('country', 'is', 'x')));
+    expect(validateCondition(many)).toContain('at most');
+  });
+
+  it('a block with a condition is saved and shown only to matching contacts', () => {
+    const c = base();
+    const b = textBlock('Only UAE');
+    b.showWhen = all(rule('country', 'is', 'UAE'));
+    c.blocks.push(b);
+    expect(validateContent(c).ok).toBe(true);
+    expect(blocksShownFor(c.blocks, { country: 'UAE' }).length).toBe(2);
+    expect(blocksShownFor(c.blocks, { country: 'EG' }).length).toBe(1);
+    const bad = base();
+    const w = textBlock('Bad');
+    w.showWhen = { match: 'all', rules: [] };
+    bad.blocks.push(w);
+    expect(validateContent(bad)).toMatchObject({ ok: false, error: expect.stringContaining('condition') });
+  });
+});
+
+describe('language defaults', () => {
+  const fields = ['country', 'language'];
+  function campaign() {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    const arDefault = newVariant(c, ['language'], ['ar'], 'language');
+    arDefault.blocks[0]!.props.heading = 'Arabic default';
+    const uaeEn = newVariant(c, fields, ['UAE', 'en']);
+    uaeEn.blocks[0]!.props.heading = 'UAE English copy';
+    c.variants = [arDefault, uaeEn];
+    return { c, arDefault, uaeEn };
+  }
+
+  it('contacts get their own copy first, then their language default, then the overall Default', () => {
+    const { c, arDefault, uaeEn } = campaign();
+    expect(pickVersion(c, fields, { country: 'UAE', language: 'en' })).toMatchObject({ layer: 'copy', variant: { id: uaeEn.id } });
+    expect(pickVersion(c, fields, { country: 'EG', language: 'ar' })).toMatchObject({ layer: 'language', variant: { id: arDefault.id } });
+    expect(pickVersion(c, fields, { country: 'EG', language: ' AR ' }).layer).toBe('language');
+    expect(pickVersion(c, fields, { country: 'FR', language: 'fr' })).toMatchObject({ layer: 'default', variant: null });
+    expect(pickVersion(c, fields, { country: 'FR' })).toMatchObject({ layer: 'default' }); // no language at all
+  });
+
+  it('language defaults only apply when conditions are chosen and Language is a segment field', () => {
+    const { c, arDefault } = campaign();
+    expect(activeLanguageVersions(c, fields).map((v) => v.id)).toEqual([arDefault.id]);
+    expect(activeLanguageVersions(c, ['country'])).toEqual([]); // Language is not a segment field
+    expect(pickVersion(c, ['country'], { country: 'EG', language: 'ar' }).layer).toBe('default');
+    c.versioning = { mode: 'copies', languageField: 'language' };
+    expect(activeLanguageVersions(c, fields)).toEqual([]);
+    expect(pickVersion(c, fields, { country: 'EG', language: 'ar' }).layer).toBe('default');
+  });
+
+  it('a language default and a segment copy may share one key when Language is the only segment field', () => {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    c.variants = [newVariant(c, ['language'], ['ar'], 'language'), newVariant(c, ['language'], ['ar'])];
+    expect(validateContent(c).ok).toBe(true);
+    expect(pickVersion(c, ['language'], { language: 'ar' }).layer).toBe('copy');
+  });
+});
+
+describe('previews with languages and conditions', () => {
+  it('shows the language default with only the blocks the segment is allowed to see', async () => {
+    await t.db.query('DELETE FROM contact');
+    await t.db.query('DELETE FROM audience_setting');
+    const id = (await builder.post('/api/campaigns', { name: 'Languages', palette: 'travel' })).body.id;
+    await builder.put(`/api/campaigns/${id}/audience`, { fields: ['country', 'language'] });
+    await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'values', values: { country: ['UAE', 'EG'], language: ['ar'] } });
+    const tests = (await builder.get(`/api/campaigns/${id}/audience`)).body.test as TestContactDto[];
+
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    const ar = newVariant(c, ['language'], ['ar'], 'language');
+    ar.blocks = [textBlock('For everyone in Arabic'), textBlock('UAE offer'), textBlock('Egypt offer')];
+    ar.blocks[1]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is', values: ['UAE'] }] };
+    ar.blocks[2]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is_one_of', values: ['EG', 'KSA'] }] };
+    c.variants = [ar];
+    expect((await builder.put(`/api/campaigns/${id}/draft`, { content: c, baseVersion: 1 })).status).toBe(200);
+
+    const uae = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'UAE-ar')!.id}`)).body;
+    expect(uae.html).toContain('For everyone in Arabic');
+    expect(uae.html).toContain('UAE offer');
+    expect(uae.html).not.toContain('Egypt offer');
+    expect(uae.versionLabel).toBe('ar default · 2 of 3 blocks');
+    const eg = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'EG-ar')!.id}`)).body;
+    expect(eg.html).toContain('Egypt offer');
+    expect(eg.html).not.toContain('UAE offer');
+    // while editing the language default every block is shown
+    const whole = (await builder.get(`/api/campaigns/${id}/preview?variant=${ar.id}`)).body;
+    expect(whole.html).toContain('UAE offer');
+    expect(whole.html).toContain('Egypt offer');
+    // only a Builder can change conditions or how versions are built
+    const v = (await builder.get(`/api/campaigns/${id}`)).body.draft.version;
+    const tamper = JSON.parse(JSON.stringify(c)) as EmailContent;
+    delete tamper.variants![0]!.blocks[1]!.showWhen;
+    expect((await admin.put(`/api/campaigns/${id}/draft`, { content: tamper, baseVersion: v })).status).toBe(403);
+    const mode = JSON.parse(JSON.stringify(c)) as EmailContent;
+    mode.versioning = { mode: 'copies' };
+    expect((await admin.put(`/api/campaigns/${id}/draft`, { content: mode, baseVersion: v })).status).toBe(403);
   });
 });

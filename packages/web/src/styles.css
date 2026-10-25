@@ -338,3 +338,23 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .version-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 16px; background: var(--accent-soft, #eef4ff); border-bottom: 1px solid var(--border); }
 .version-bar label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
 .version-bar select { width: auto; }
+
+/* Conditions: who sees a block */
+.show-when { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.show-when h3 { margin: 0 0 8px; font-size: 1rem; }
+.cond-group { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.cond-group .cond-group { margin-left: 8px; background: transparent; }
+.cond-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; font-weight: 600; }
+.cond-head select { width: auto; }
+.cond-rule { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.cond-rule select, .cond-rule input { width: auto; flex: 1 1 110px; min-width: 0; }
+.cond-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.cond-badge { font-size: 0.78rem; background: #fff4d6; color: #5c4400; border: 1px solid #e6c766; border-radius: 999px; padding: 1px 8px; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Audience: building versions, step line */
+.build-mode { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.build-mode legend { font-weight: 600; padding: 0 6px; }
+.lang-setting { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.lang-setting select { width: auto; }
+.step-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; background: var(--accent-soft, #eef4ff); border-radius: 8px; }
+.step-line button { margin-left: auto; }

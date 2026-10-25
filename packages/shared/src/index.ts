@@ -126,6 +126,7 @@ export * from './content.js';
 export * from './personalize.js';
 export * from './presets.js';
 export * from './versions.js';
+export * from './conditions.js';
 
 import type { BlockDefinition } from './blocks.js';
 import type { EmailContent } from './content.js';

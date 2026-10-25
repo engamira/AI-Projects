@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BLOCK_TYPES, LEGACY_COLOR_PROPS, blockDefinition, type BlockDefinition, type BlockType, type FieldDef, type Props } from './blocks.js';
 import { PALETTE_IDS, type PaletteId } from './palettes.js';
+import { validateCondition, type ConditionGroup } from './conditions.js';
 
 // ---------- Email content: what is stored for every campaign draft and revision ----------
 
@@ -9,6 +10,8 @@ export type BlockInstance = {
   type: BlockType;
   sourceVersion: number; // version of the library definition it was created from
   props: Props; // this instance's own copy: edits never reach the library
+  /** Show this block only to contacts who meet the condition (about the campaign's segment fields). Absent = everyone. */
+  showWhen?: ConditionGroup;
 };
 
 export type EmailSettings = {
@@ -38,6 +41,16 @@ export type SegmentVersion = EmailVersion & {
   values: string[];
   /** Identifies the combination for matching (see segmentKey in versions.ts). */
   key: string;
+  /** "language": the default email for one language (it holds every block any segment of that language needs, shown by conditions). Absent: a copy written for exactly one segment. */
+  kind?: 'language';
+};
+
+/** How this campaign's versions are built. */
+export type Versioning = {
+  /** "conditions": one default email per language with show/hide conditions on blocks. "copies": a separate copy per segment. */
+  mode: 'conditions' | 'copies';
+  /** The contact field that holds the language (one of the campaign's segment fields). */
+  languageField?: string;
 };
 
 export type EmailContent = {
@@ -46,6 +59,7 @@ export type EmailContent = {
   blocks: BlockInstance[];
   /** Versions written for particular segments. Absent when there are none. */
   variants?: SegmentVersion[];
+  versioning?: Versioning;
 };
 
 export const MAX_VARIANTS = 50;
@@ -206,7 +220,7 @@ export function checkFields(fields: FieldDef[], values: Record<string, unknown>,
   return null;
 }
 
-const blockShape = z.object({ id: z.string().uuid(), type: z.string(), sourceVersion: z.number().int().min(1), props: z.record(z.string(), z.unknown()) }).strict();
+const blockShape = z.object({ id: z.string().uuid(), type: z.string(), sourceVersion: z.number().int().min(1), props: z.record(z.string(), z.unknown()), showWhen: z.unknown().optional() }).strict();
 
 const envelope = z.object({
   schemaVersion: z.literal(1),
@@ -217,9 +231,11 @@ const envelope = z.object({
     fields: z.array(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/)).min(1).max(10),
     values: z.array(z.string().max(200)).min(1).max(10),
     key: z.string().min(1).max(2500),
+    kind: z.literal('language').optional(),
     settings: z.record(z.string(), z.unknown()),
     blocks: z.array(blockShape).max(MAX_BLOCKS),
   }).strict()).max(MAX_VARIANTS).optional(),
+  versioning: z.object({ mode: z.enum(['conditions', 'copies']), languageField: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).optional() }).strict().optional(),
 }).strict();
 
 export type ValidationResult = { ok: true; content: EmailContent } | { ok: false; error: string };
@@ -241,11 +257,12 @@ export function validateContent(input: unknown): ValidationResult {
   const ids = new Set<string>();
   const keys = new Set<string>();
   for (const v of variants) {
-    const name = `Version for segment ${v.values.map((x) => x || 'blank').join('-')}: `;
+    const name = `${v.kind === 'language' ? 'Language default' : 'Version for segment'} ${v.values.map((x) => x || 'blank').join('-')}: `;
     if (ids.has(v.id)) return { ok: false, error: `${name}duplicate id` };
     ids.add(v.id);
-    if (keys.has(v.key)) return { ok: false, error: `${name}there are two versions for the same segment` };
-    keys.add(v.key);
+    const uniq = `${v.kind ?? 'segment'}|${v.key}`;
+    if (keys.has(uniq)) return { ok: false, error: `${name}there are two versions for the same segment` };
+    keys.add(uniq);
     if (v.fields.length !== v.values.length) return { ok: false, error: `${name}the values do not match the fields` };
     if (v.settings.palette !== palette) return { ok: false, error: `${name}the template colors must be the same as the Default version` };
     const err = checkVersion(v.settings, v.blocks, palette, name);
@@ -257,7 +274,7 @@ export function validateContent(input: unknown): ValidationResult {
 }
 
 /** Checks the settings and blocks of one version (the Default or a segment's). Returns an error message or null. */
-function checkVersion(settings: Record<string, unknown>, blocks: { id: string; type: string; props: Record<string, unknown> }[], palette: string, prefix: string): string | null {
+function checkVersion(settings: Record<string, unknown>, blocks: { id: string; type: string; props: Record<string, unknown>; showWhen?: unknown }[], palette: string, prefix: string): string | null {
   const { palette: _p, ...otherSettings } = settings;
   const settingsErr = checkFields(SETTINGS_FIELDS, otherSettings, `${prefix}Email settings`);
   if (settingsErr) return settingsErr;
@@ -267,6 +284,10 @@ function checkVersion(settings: Record<string, unknown>, blocks: { id: string; t
     seen.add(b.id);
     if (!(BLOCK_TYPES as readonly string[]).includes(b.type)) return `${prefix}Block ${i + 1}: unknown block type "${b.type}"`;
     const def = blockDefinition(b.type)!;
+    if (b.showWhen !== undefined) {
+      const ce = validateCondition(b.showWhen);
+      if (ce) return `${prefix}Block ${i + 1} (${def.label}): ${ce}`;
+    }
     if (def.category !== 'shared' && def.category !== palette) {
       return `${prefix}Block ${i + 1} (${def.label}) belongs to the ${def.category} template and cannot be used in this email.`;
     }

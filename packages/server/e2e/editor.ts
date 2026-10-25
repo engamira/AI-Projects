@@ -67,6 +67,8 @@ try {
   assert((await page.getByLabel('Template colors').inputValue()) === 'travel', 'Travel colors are the default choice');
   assert((await page.getByLabel('Template colors').locator('option').allInnerTexts()).join() === 'Travel,Events,Cosmetics', 'three template color sets to choose from');
   await page.getByRole('button', { name: 'Create and open' }).click();
+  await page.getByTestId('audience-step').waitFor(); // a new campaign opens on its Audience (step 1); go on to the email
+  await page.getByRole('button', { name: /Step 2: write the email/ }).click();
   await page.getByRole('region', { name: 'Email canvas' }).waitFor();
   assert((await blocks.count()) === 0, 'new campaign starts empty');
   ok('builder creates a campaign and opens the editor');
@@ -163,6 +165,8 @@ try {
   await page.getByLabel(/Start from the ready-made/).uncheck();
   await page.getByLabel('Template colors').selectOption('events');
   await page.getByRole('button', { name: 'Create and open' }).click();
+  await page.getByTestId('audience-step').waitFor(); // a new campaign opens on its Audience (step 1); go on to the email
+  await page.getByRole('button', { name: /Step 2: write the email/ }).click();
   await page.getByRole('region', { name: 'Email canvas' }).waitFor();
   await page.getByRole('button', { name: 'Add Hero banner to the end of the email' }).click();
   assert((await blocks.nth(0).innerText()).includes('A big, clear headline'), 'a new hero starts from the original defaults');
@@ -239,6 +243,8 @@ try {
   await page.getByLabel('Template colors').selectOption('events');
   assert(await page.getByLabel(/Start from the ready-made Events layout/).isChecked(), 'the ready-made layout is on by default');
   await page.getByRole('button', { name: 'Create and open' }).click();
+  await page.getByTestId('audience-step').waitFor(); // a new campaign opens on its Audience (step 1); go on to the email
+  await page.getByRole('button', { name: /Step 2: write the email/ }).click();
   await blocks.first().waitFor();
   assert((await order()) === 'hero,event_details,text,agenda,speakers,registration_cta', `Events starter layout (${await order()})`);
   await page.getByRole('heading', { name: 'Events blocks' }).waitFor();

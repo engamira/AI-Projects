@@ -21,7 +21,7 @@ export function CampaignsPage() {
     setError('');
     try {
       const c = await api<CampaignDto>('POST', '/api/campaigns', { name, palette, starter });
-      nav(`/campaigns/${c.id}`);
+      nav(`/campaigns/${c.id}`, { state: { tab: 'audience' } }); // set up who it is for first: the segments tell which languages and versions are needed
     } catch (err) { setError(errorText(err)); }
   }
   async function duplicate(id: string) {

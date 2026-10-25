@@ -1,5 +1,6 @@
-import type { EmailContent, EmailVersion, SegmentVersion } from './content.js';
-import { segmentCode } from './contacts.js';
+import type { BlockInstance, EmailContent, EmailVersion, SegmentVersion } from './content.js';
+import { evaluateCondition } from './conditions.js';
+import { segmentCode, type ContactFieldType } from './contacts.js';
 
 // Versions of an email for segments of the audience. The Default version is the email itself; a segment version is a
 // full, independent copy written for one segment. A contact whose segment has no version gets the Default.
@@ -27,26 +28,63 @@ export function versionOf(content: EmailContent, variantId: string | null): Emai
   return v ?? content;
 }
 
-/** The email as one plain version (no variants), ready to render. */
-export function flatContent(content: EmailContent, variant: SegmentVersion | null): EmailContent {
+/** Where a contact's email comes from. */
+export type VersionLayer = 'copy' | 'language' | 'default';
+
+/** Blocks the contact sees: those with no condition, or whose condition the contact meets. */
+export function blocksShownFor(blocks: BlockInstance[], contact: Record<string, Value>, typeOf?: (field: string) => ContactFieldType | undefined): BlockInstance[] {
+  return blocks.filter((b) => !b.showWhen || evaluateCondition(b.showWhen, (f) => contact[f], typeOf));
+}
+
+/**
+ * The email as one plain version (no variants), ready to render. When a contact is given, blocks whose "show when"
+ * condition the contact does not meet are left out.
+ */
+export function flatContent(content: EmailContent, variant: SegmentVersion | null, opts: { contact?: Record<string, Value> | null; typeOf?: (field: string) => ContactFieldType | undefined } = {}): EmailContent {
   const src = variant ?? content;
-  return { schemaVersion: 1, settings: src.settings, blocks: src.blocks };
+  return { schemaVersion: 1, settings: src.settings, blocks: opts.contact ? blocksShownFor(src.blocks, opts.contact, opts.typeOf) : src.blocks };
 }
 
-/** The version that a contact with these values receives, or null for the Default. `audienceFields` are the campaign's segment fields. */
-export function pickVariant(content: EmailContent, audienceFields: string[], contact: Record<string, Value>): SegmentVersion | null {
-  if (!content.variants?.length || audienceFields.length === 0) return null;
+/**
+ * The email a contact receives, in this order: (1) a copy written for exactly their segment, (2) the default for their
+ * language (when the campaign builds versions with conditions), (3) the overall Default (variant null).
+ * `audienceFields` are the campaign's segment fields.
+ */
+export function pickVersion(content: EmailContent, audienceFields: string[], contact: Record<string, Value>): { variant: SegmentVersion | null; layer: VersionLayer } {
+  const list = content.variants ?? [];
+  if (!list.length || audienceFields.length === 0) return { variant: null, layer: 'default' };
   const key = segmentKey(audienceFields, audienceFields.map((k) => contact[k]));
-  return content.variants.find((v) => v.key === key && v.fields.join(',') === audienceFields.join(',')) ?? null;
+  const copy = list.find((v) => !v.kind && v.key === key && v.fields.join(',') === audienceFields.join(','));
+  if (copy) return { variant: copy, layer: 'copy' };
+  const lf = content.versioning?.languageField;
+  if (content.versioning?.mode === 'conditions' && lf && audienceFields.includes(lf)) {
+    const lkey = segmentKey([lf], [contact[lf]]);
+    const lang = list.find((v) => v.kind === 'language' && v.key === lkey && v.fields.join(',') === lf);
+    if (lang) return { variant: lang, layer: 'language' };
+  }
+  return { variant: null, layer: 'default' };
 }
 
-/** A new segment version, starting as an independent copy of `from` (the Default or another version). Blocks keep their ids so a shared fix can be copied across versions. */
-export function newVariant(from: EmailVersion, fields: string[], values: Value[]): SegmentVersion {
+/** The version that a contact with these values receives, or null for the Default. */
+export const pickVariant = (content: EmailContent, audienceFields: string[], contact: Record<string, Value>): SegmentVersion | null => pickVersion(content, audienceFields, contact).variant;
+
+/** A new version, starting as an independent copy of `from` (the Default or another version). Blocks keep their ids so a shared fix can be copied across versions. */
+export function newVariant(from: EmailVersion, fields: string[], values: Value[], kind?: 'language'): SegmentVersion {
   const copy = JSON.parse(JSON.stringify({ settings: from.settings, blocks: from.blocks })) as EmailVersion;
-  return { id: crypto.randomUUID(), fields, values: values.map(segmentPart), key: segmentKey(fields, values), settings: copy.settings, blocks: copy.blocks };
+  return { id: crypto.randomUUID(), fields, values: values.map(segmentPart), key: segmentKey(fields, values), settings: copy.settings, blocks: copy.blocks, ...(kind ? { kind } : {}) };
 }
 
-/** Versions that belong to the campaign's current segment fields (the others are kept but unused until the fields match again). */
+/** Copies written for exactly one segment of the campaign's current segment fields (the others are kept but unused until the fields match again). */
 export function activeVariants(content: EmailContent, audienceFields: string[]): SegmentVersion[] {
-  return (content.variants ?? []).filter((v) => v.fields.join(',') === audienceFields.join(','));
+  return (content.variants ?? []).filter((v) => !v.kind && v.fields.join(',') === audienceFields.join(','));
 }
+
+/** Language defaults in use: the campaign builds with conditions, Language is one of its segment fields, and the default is for that field. */
+export function activeLanguageVersions(content: EmailContent, audienceFields: string[]): SegmentVersion[] {
+  const lf = content.versioning?.languageField;
+  if (content.versioning?.mode !== 'conditions' || !lf || !audienceFields.includes(lf)) return [];
+  return (content.variants ?? []).filter((v) => v.kind === 'language' && v.fields.join(',') === lf);
+}
+
+/** The name shown for a version: UAE-ar for a segment copy, "ar default" for a language default. */
+export const versionName = (v: Pick<SegmentVersion, 'values' | 'kind'>): string => (v.kind === 'language' ? `${v.values[0] || 'blank'} default` : variantCode(v));

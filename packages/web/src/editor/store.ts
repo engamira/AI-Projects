@@ -11,6 +11,8 @@ import {
   type EmailContent,
   type EmailSettings,
   type EmailVersion,
+  type ConditionGroup,
+  type Versioning,
   type PropValue,
   type SaveDraftResponse,
 } from '@cl/shared';
@@ -45,6 +47,12 @@ type EditorState = {
   /** Creates a version for a segment as a copy of the Default (or of another version) and starts editing it. */
   addVariant: (fields: string[], values: (string | number | boolean | null)[], copyFrom: string | null) => string | null;
   removeVariant: (id: string) => void;
+  /** Creates the default email for one language (it holds every block any segment of that language needs). */
+  addLanguageVersion: (languageField: string, value: string, copyFrom: string | null) => string | null;
+  /** How this campaign builds versions, and which field holds the language. */
+  setVersioning: (v: Versioning) => void;
+  /** Shows a block only to contacts who meet the condition (null = everyone). */
+  setShowWhen: (blockId: string, condition: ConditionGroup | null) => void;
   /** Copies one block into every other version (replacing the block with the same identity, or adding it at the same place). */
   copyBlockToOthers: (id: string) => void;
   undo: () => void;
@@ -136,6 +144,33 @@ export const useEditor = create<EditorState>((set, get) => {
       commit({ ...content, variants: [...(content.variants ?? []), v] });
       set({ editing: v.id, selectedId: null });
       return v.id;
+    },
+
+    addLanguageVersion: (languageField, value, copyFrom) => {
+      const { content } = get();
+      if ((content.variants?.length ?? 0) >= MAX_VARIANTS) return null;
+      const v = newVariant(versionOf(content, copyFrom), [languageField], [value], 'language');
+      if (content.variants?.some((x) => x.key === v.key && x.kind === 'language')) return null;
+      commit({ ...content, variants: [...(content.variants ?? []), v] });
+      set({ editing: v.id, selectedId: null });
+      return v.id;
+    },
+
+    setVersioning: (v) => {
+      const { content } = get();
+      commit({ ...content, versioning: v });
+    },
+
+    setShowWhen: (blockId, condition) => {
+      const { content, editing } = get();
+      commit(change(content, editing, (d) => ({
+        ...d,
+        blocks: d.blocks.map((b) => {
+          if (b.id !== blockId) return b;
+          const { showWhen: _old, ...rest } = b;
+          return condition ? { ...rest, showWhen: condition } : rest;
+        }),
+      })), `${editing ?? ''}:${blockId}:showWhen`);
     },
 
     removeVariant: (id) => {

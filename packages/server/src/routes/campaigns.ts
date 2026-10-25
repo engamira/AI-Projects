@@ -9,7 +9,8 @@ import {
   hasCapability,
   emptyContent,
   flatContent,
-  pickVariant,
+  pickVersion,
+  versionName,
   normalizeContent,
   starterContent,
   validateContent,
@@ -306,16 +307,27 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       if (!r.rows[0]) return notFound(reply);
       content = normalizeContent(r.rows[0].content);
     }
-    // Which version: the one asked for (while editing it), else the one this recipient would receive, else the Default.
-    let variant = variantId ? content.variants?.find((v) => v.id === variantId) ?? null : null;
-    if (variantId && !variant) return reply.status(400).send({ error: 'invalid_version', message: 'That version does not exist (any more).' });
-    if (!variant && who.kind === 'recipient' && who.recipient) variant = pickVariant(content, await getAudienceFields(db, id), who.recipient);
-    const flat = flatContent(content, variant);
+    // Which email: the one asked for (while editing it, shown whole), else the one this recipient receives:
+    // a copy for their segment, else the default for their language, else the overall Default. Blocks whose
+    // "show when" condition the recipient does not meet are left out.
+    const allF = await allFields(db);
+    const typeOf = (k: string) => allF.find((f) => f.key === k)?.type;
+    const picked = variantId ? content.variants?.find((v) => v.id === variantId) ?? null : null;
+    if (variantId && !picked) return reply.status(400).send({ error: 'invalid_version', message: 'That version does not exist (any more).' });
+    const contact = !variantId && who.kind === 'recipient' ? who.recipient : null;
+    const choice = contact ? pickVersion(content, await getAudienceFields(db, id), contact) : { variant: picked, layer: picked ? (picked.kind ? 'language' : 'copy') : 'default' };
+    const variant = choice.variant;
+    const flat = flatContent(content, variant, { contact, typeOf });
     // Every email shows the shared header and footer of its template (latest version).
     const brand = await latestProfile(db, content.settings.palette);
-    const knownFields = (await allFields(db)).map((f) => f.key);
+    const knownFields = allF.map((f) => f.key);
     const out = await renderEmail(flat, { baseUrl: config.baseUrl, brand, knownFields, ...(who.kind === 'recipient' ? { recipient: who.recipient } : {}) });
-    if (content.variants?.length) out.versionLabel = variant ? `${variant.values.map((x) => x || 'blank').join('-')} version` : 'Default version';
+    const total = (variant ?? content).blocks.length;
+    const conditional = (variant ?? content).blocks.some((b) => b.showWhen);
+    if (content.variants?.length || conditional) {
+      const base = variant ? versionName(variant) + (variant.kind ? '' : ' version') : 'Default version';
+      out.versionLabel = conditional && contact && flat.blocks.length < total ? `${base} · ${flat.blocks.length} of ${total} blocks` : base;
+    }
     return who.kind === 'recipient' ? { ...out, recipientLabel: who.label } : out;
   });
 }

@@ -121,8 +121,8 @@ try {
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('Segment test campaign');
   await page.getByRole('button', { name: 'Create and open' }).click();
-  await page.getByRole('region', { name: 'Email canvas' }).waitFor();
-  await page.getByRole('tab', { name: 'Audience' }).click();
+  await page.getByTestId('audience-step').waitFor(); // a new campaign opens on its Audience: segments first
+  ok('a new campaign opens on its Audience (step 1), before the email');
   await page.locator('#campaign-seg-0').selectOption({ label: 'Country' });
   await page.locator('#campaign-seg-1').selectOption({ label: 'Language' });
   await page.locator('td strong', { hasText: 'UAE-en' }).first().waitFor(); // named from the values in the order chosen
@@ -181,6 +181,32 @@ try {
   await who2.selectOption(enId!);
   await page.getByTestId('shown-version').getByText('Default version').waitFor();
   ok('a segment gets its own independent version; contacts of other segments get the Default');
+
+  // ---- one default email per language, with show/hide conditions on blocks
+  await page.getByRole('tab', { name: 'Audience' }).click();
+  await page.getByRole('button', { name: 'Create the default for ar' }).click(); // the languages come from the campaign's segments
+  await page.getByTestId('version-bar').getByText('You are editing the ar default').waitFor();
+  await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
+  await page.getByLabel('Heading', { exact: true }).fill('UAE only');
+  await page.getByLabel('Who sees this block').selectOption('some');
+  await page.getByTestId('show-when').getByLabel('Value').fill('UAE'); // Country is UAE (the first segment field)
+  await page.getByTestId('cond-badge').getByText('Only when Country is UAE').waitFor();
+  await page.getByText('All changes saved').waitFor();
+  await page.getByRole('tab', { name: 'Audience' }).click();
+  await tests.getByLabel(/^Country/).fill('EG');
+  await tests.getByLabel(/^Language/).fill('ar');
+  await page.getByRole('button', { name: 'Add these combinations' }).click();
+  await tests.locator('td strong', { hasText: 'EG-ar' }).waitFor();
+  const segs = page.getByTestId('segment-versions');
+  await segs.getByText(/ar default · \d+ of \d+ blocks/).first().waitFor(); // EG-ar uses the Arabic default and does not see the UAE-only block
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  const egId = await page.getByLabel('Preview as').locator('optgroup[label^="Test audience"] option', { hasText: 'EG-ar' }).first().getAttribute('value');
+  await page.getByLabel('Preview as').selectOption(egId!);
+  await page.getByTestId('shown-version').getByText(/ar default/).waitFor();
+  const label = await page.getByTestId('shown-version').innerText();
+  const m = /ar default · (\d+) of (\d+) blocks/.exec(label);
+  assert(!!m && Number(m[1]) === Number(m[2]) - 1, `a contact outside the UAE sees one block less (got "${label}")`);
+  ok('a language default holds every block and a condition hides one from segments that do not meet it');
 
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');
