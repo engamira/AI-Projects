@@ -1,16 +1,16 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { hasCapability, type CampaignAudienceDto, type ContactField, type PreviewRecipientsResponse, type TestContactDto } from '@cl/shared';
-import { clearTestContacts, generateTestAudience, getAudienceFields, listTestContacts, previewRecipients, setAudienceFields } from '../campaignAudience.js';
+import { clearTestContacts, generateTestAudience, getAudienceFields, listTestContacts, previewRecipients, removeTestContact, setAudienceFields } from '../campaignAudience.js';
 import { allFields } from '../contacts.js';
 import { DEFAULT_WORKSPACE_ID, withTransaction, type Db } from '../db.js';
 import { logActivity } from '../services.js';
 
 const idParam = z.object({ id: z.string().uuid() });
-const fieldsBody = z.object({ fields: z.array(z.string().max(60)).max(10) });
+const fieldsBody = z.object({ fields: z.array(z.string().max(60)).max(20) });
 const testBody = z.object({
-  mode: z.enum(['sheet', 'all']),
-  extraValues: z.record(z.string().max(60), z.array(z.string().max(100)).max(30)).optional(),
+  mode: z.enum(['sheet', 'values']),
+  values: z.record(z.string().max(60), z.array(z.string().max(100)).max(30)).optional(),
 });
 
 export function campaignAudienceRoutes(app: FastifyInstance, db: Db): void {
@@ -44,7 +44,7 @@ export function campaignAudienceRoutes(app: FastifyInstance, db: Db): void {
     return 'error' in r ? reply.status(400).send({ error: 'invalid_audience', message: r.error }) : { fields: r.fields };
   });
 
-  // Make the test audience: one made-up contact for each segment, to try the email against.
+  // Add to the test audience: one made-up contact for each segment, to try the email against. Existing ones are kept.
   app.post<{ Params: { id: string } }>('/api/campaigns/:id/test-audience', { config: { access: 'campaign.edit' } }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const body = testBody.parse(req.body);
@@ -54,10 +54,10 @@ export function campaignAudienceRoutes(app: FastifyInstance, db: Db): void {
     const userId = req.auth!.user.id;
     const r = await withTransaction(db, async (q) => {
       const out = await generateTestAudience(q, id, body);
-      if ('contacts' in out) await logActivity(q, { actorId: userId, action: 'campaign.test_audience_generated', entityType: 'campaign', entityId: id, details: { mode: body.mode, count: out.contacts.length } });
+      if ('result' in out) await logActivity(q, { actorId: userId, action: 'campaign.test_audience_added', entityType: 'campaign', entityId: id, details: { mode: body.mode, added: out.result.added, total: out.result.contacts.length } });
       return out;
     });
-    return 'error' in r ? reply.status(400).send({ error: 'invalid_test_audience', message: r.error }) : reply.status(201).send(r.contacts);
+    return 'error' in r ? reply.status(400).send({ error: 'invalid_test_audience', message: r.error }) : reply.status(201).send(r.result);
   });
 
   app.delete<{ Params: { id: string } }>('/api/campaigns/:id/test-audience', { config: { access: 'campaign.edit' } }, async (req, reply) => {
@@ -67,6 +67,16 @@ export function campaignAudienceRoutes(app: FastifyInstance, db: Db): void {
     if (status !== 'draft') return locked(reply);
     await clearTestContacts(db, id);
     return reply.status(204).send();
+  });
+
+  // Remove one test contact.
+  app.delete<{ Params: { id: string; contactId: string } }>('/api/campaigns/:id/test-audience/:contactId', { config: { access: 'campaign.edit' } }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const { contactId } = z.object({ contactId: z.string().uuid() }).parse(req.params);
+    const status = await statusOf(id);
+    if (!status) return notFound(reply);
+    if (status !== 'draft') return locked(reply);
+    return (await removeTestContact(db, id, contactId)) ? reply.status(204).send() : reply.status(404).send({ error: 'not_found', message: 'Test contact not found.' });
   });
 
   // Who "Preview as..." can show the email to. Real contacts are listed only for people allowed to see the audience.

@@ -63,7 +63,7 @@ export function contactRoutes(app: FastifyInstance, db: Db): void {
 
   // Segments: split the contacts by the fields you choose, e.g. ?fields=country,language
   app.get<{ Querystring: { fields?: string } }>('/api/audience/segments', { config: { access: 'audience.manage' } }, async (req, reply): Promise<SegmentsResponse | FastifyReply> => {
-    const keys = z.string().max(400).default('').parse(req.query.fields ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    const keys = z.string().max(800).default('').parse(req.query.fields ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     const r = await segments(db, keys);
     return 'error' in r ? reply.status(400).send({ error: 'invalid_segments', message: r.error }) : r;
   });

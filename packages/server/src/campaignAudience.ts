@@ -1,6 +1,6 @@
 import {
-  SAMPLE_RECIPIENTS, TEST_AUDIENCE_MAX, fieldValue, parseCell, segmentCode, segmentContacts,
-  type ContactDto, type ContactField, type PreviewRecipientGroup, type PreviewRecipientsResponse, type Recipient, type TestAudienceRequest, type TestContactDto,
+  MAX_SEGMENT_FIELDS, SAMPLE_RECIPIENTS, TEST_AUDIENCE_MAX, fieldValue, parseCell, segmentCode, segmentContacts,
+  type ContactDto, type ContactField, type PreviewRecipientGroup, type PreviewRecipientsResponse, type Recipient, type TestAudienceRequest, type TestAudienceResult, type TestContactDto,
 } from '@cl/shared';
 import { allFields, listContacts } from './contacts.js';
 import { DEFAULT_WORKSPACE_ID, type Queryable } from './db.js';
@@ -8,7 +8,7 @@ import { DEFAULT_WORKSPACE_ID, type Queryable } from './db.js';
 // A campaign's audience set-up: which fields segment it, a generated TEST audience (made-up contacts, one per segment,
 // never part of the real list and never mailed), and who "Preview as..." can show the email to.
 
-const MAX_FIELDS = 5;
+const MAX_FIELDS = MAX_SEGMENT_FIELDS;
 
 export async function getAudienceFields(q: Queryable, campaignId: string): Promise<string[]> {
   const r = await q.query<{ fields: string[] }>('SELECT fields FROM campaign_audience WHERE campaign_id = $1', [campaignId]);
@@ -52,63 +52,68 @@ const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').
 type Value = string | number | boolean;
 const same = (a: Value, b: Value): boolean => (typeof a === 'string' && typeof b === 'string' ? a.trim().toLowerCase() === b.trim().toLowerCase() : a === b);
 
-/** Replaces the campaign's test audience with one made-up contact per segment. */
-export async function generateTestAudience(q: Queryable, campaignId: string, req: TestAudienceRequest): Promise<{ contacts: TestContactDto[] } | { error: string }> {
+/**
+ * Adds made-up contacts to the campaign's test audience, one per segment. Existing ones are kept (a segment that is
+ * already there is skipped), so different groups of combinations can be built up one after another.
+ */
+export async function generateTestAudience(q: Queryable, campaignId: string, req: TestAudienceRequest): Promise<{ result: TestAudienceResult } | { error: string }> {
   const keys = await getAudienceFields(q, campaignId);
   if (keys.length === 0) return { error: 'Choose the fields that segment this campaign first.' };
-  const fields = (await allFields(q)).filter((f) => keys.includes(f.key));
+  const fields = await allFields(q);
   const ordered = keys.map((k) => fields.find((f) => f.key === k)!).filter(Boolean);
-  const real = await listContacts(q);
 
   let combos: Value[][] = [];
   if (req.mode === 'sheet') {
-    for (const s of segmentContacts(real, ordered)) {
+    for (const s of segmentContacts(await listContacts(q), ordered)) {
       if (s.values.every((v) => v === null || v === '')) continue; // a segment with nothing in it is not worth testing
       combos.push(s.values.map((v) => (v === null || v === '' ? '' : v)));
     }
-  }
-  // values per field: those in the contact list plus any the person typed in
-  const lists: Value[][] = [];
-  for (const f of ordered) {
-    const vals: Value[] = [];
-    const add = (v: Value) => { if (!vals.some((x) => same(x, v))) vals.push(v); };
-    for (const c of real) { const v = fieldValue(c, f.key); if (v !== null && v !== '') add(v); }
-    for (const raw of req.extraValues?.[f.key] ?? []) {
-      const cell = parseCell(f, raw);
-      if ('error' in cell) return { error: cell.error + '.' };
-      if (cell.value !== null) add(cell.value);
+    if (combos.length === 0) return { error: 'Your contact list has no segments to copy yet. Import contacts first, or type the values you want.' };
+  } else {
+    const lists: Value[][] = [];
+    // a typed value takes the spelling already used in your contact list or in earlier test contacts (uae -> UAE)
+    const real = await listContacts(q);
+    const earlier = await listTestContacts(q, campaignId);
+    for (const f of ordered) {
+      const known: Value[] = [...real.map((c) => fieldValue(c, f.key)), ...earlier.map((c) => c.data[f.key] ?? null)].filter((v): v is Value => v !== null && v !== '');
+      const vals: Value[] = [];
+      for (const raw of req.values?.[f.key] ?? []) {
+        const cell = parseCell(f, raw);
+        if ('error' in cell) return { error: cell.error + '.' };
+        if (cell.value === null) continue;
+        const v = known.find((k) => same(k, cell.value as Value)) ?? cell.value;
+        if (!vals.some((x) => same(x, v))) vals.push(v);
+      }
+      if (vals.length === 0) return { error: `Type at least one value for ${f.label.replace(/ \(.*\)$/, '')}.` };
+      lists.push(vals);
     }
-    lists.push(vals);
-  }
-  if (req.mode === 'all') {
-    if (lists.some((l) => l.length === 0)) return { error: 'There are no values to combine yet. Add some in the boxes below, or import contacts first.' };
     combos = lists.reduce<Value[][]>((acc, l) => acc.flatMap((a) => l.map((v) => [...a, v])), [[]]);
-  } else if (req.extraValues && Object.values(req.extraValues).some((l) => l.length)) {
-    // "sheet" mode plus typed-in values: also make the combinations that use them
-    const all = lists.every((l) => l.length > 0) ? lists.reduce<Value[][]>((acc, l) => acc.flatMap((a) => l.map((v) => [...a, v])), [[]]) : [];
-    for (const c of all) if (!combos.some((x) => x.every((v, i) => same(v, c[i]!)))) combos.push(c);
   }
-  if (combos.length === 0) return { error: 'No segments to create test contacts for. Import contacts first, or add values and choose "every combination".' };
-  if (combos.length > TEST_AUDIENCE_MAX) return { error: `That would make ${combos.length} test contacts. The most is ${TEST_AUDIENCE_MAX}: use fewer values or fewer fields.` };
 
-  await clearTestContacts(q, campaignId);
-  const used = new Set<string>();
-  const out: TestContactDto[] = [];
-  for (const [i, c] of combos.entries()) {
-    let code = segmentCode(c.map((v) => (v === '' ? null : v)));
-    if (used.has(code)) code = `${code}-${i + 1}`;
-    used.add(code);
+  const existing = await listTestContacts(q, campaignId);
+  const have = new Set(existing.map((c) => c.code.toLowerCase()));
+  const fresh = combos
+    .map((c) => ({ c, code: segmentCode(c.map((v) => (v === '' ? null : v))) }))
+    .filter((x, i, all) => !have.has(x.code.toLowerCase()) && all.findIndex((y) => y.code.toLowerCase() === x.code.toLowerCase()) === i);
+  if (existing.length + fresh.length > TEST_AUDIENCE_MAX) {
+    return { error: `That would make ${existing.length + fresh.length} test contacts. The most is ${TEST_AUDIENCE_MAX}: remove some or add fewer.` };
+  }
+
+  for (const [n, { c, code }] of fresh.entries()) {
     const data: TestContactDto['data'] = {
-      first_name: FIRST_NAMES[i % FIRST_NAMES.length]!, last_name: 'Test', company: 'Test Co', email: `${slug(code)}@test-audience.invalid`,
+      first_name: FIRST_NAMES[(existing.length + n) % FIRST_NAMES.length]!, last_name: 'Test', company: 'Test Co', email: `${slug(code)}@test-audience.invalid`,
     };
     ordered.forEach((f, j) => { data[f.key] = c[j] === '' ? null : (c[j] as Value); });
-    const r = await q.query<{ id: string }>(
-      'INSERT INTO campaign_test_contact (workspace_id, campaign_id, code, email, data) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+    await q.query(
+      'INSERT INTO campaign_test_contact (workspace_id, campaign_id, code, email, data) VALUES ($1, $2, $3, $4, $5)',
       [DEFAULT_WORKSPACE_ID, campaignId, code, data.email, JSON.stringify(data)],
     );
-    out.push({ id: r.rows[0]!.id, code, email: String(data.email), data });
   }
-  return { contacts: out };
+  return { result: { contacts: await listTestContacts(q, campaignId), added: fresh.length, alreadyThere: combos.length - fresh.length } };
+}
+
+export async function removeTestContact(q: Queryable, campaignId: string, id: string): Promise<boolean> {
+  return (await q.query('DELETE FROM campaign_test_contact WHERE id = $1 AND campaign_id = $2', [id, campaignId])).rowCount === 1;
 }
 
 // ---------- "Preview as..." ----------

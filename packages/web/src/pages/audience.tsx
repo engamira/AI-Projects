@@ -5,6 +5,7 @@ import {
 } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
+import { SegmentFieldPicker } from '../components/SegmentFieldPicker';
 
 const SAMPLE_CSV = [
   'Email,First Name,Last Name,Company,Country,City,Language,Customer Since,Orders,VIP,Marketing Permission,Interest',
@@ -152,7 +153,7 @@ function Importer({ stored, max, onDone }: { stored: number; max: number; onDone
                       if (e.target.checked) next[c] = { label: c.slice(0, 40), type: 'text' }; else delete next[c];
                       setNewFields(next);
                       void run(csv, mapping, updateExisting, requestFor(next));
-                    }} /> Import <strong>{c}</strong> as a new field</label>
+                    }} /> <span>Import <strong>{c}</strong> as a new field</span></label>
                     {on && (
                       <>
                         <input aria-label={`Name of the new field for ${c}`} maxLength={40} value={newFields[c]!.label} onChange={(e) => setNewFields({ ...newFields, [c]: { ...newFields[c]!, label: e.target.value } })} onBlur={() => void run(csv, mapping, updateExisting, requestFor(newFields))} />
@@ -347,19 +348,11 @@ function SegmentExplorer({ fields, refreshKey }: { fields: ContactField[]; refre
     return () => { live = false; };
   }, [valid.join(','), refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (k: string) => setChosen(valid.includes(k) ? valid.filter((x) => x !== k) : [...valid, k].slice(0, 5));
-
   return (
     <div className="card wide" data-testid="segments">
       <h2 style={{ marginTop: 0 }}>Segments</h2>
-      <p className="muted small">Choose one or more fields to split your contacts into groups. For example Country + Language gives one segment for each combination. Use a different choice for each campaign.</p>
-      <div className="seg-fields" role="group" aria-label="Fields to segment by">
-        {choices.map((f) => (
-          <button key={f.key} type="button" className={`folder-chip${valid.includes(f.key) ? ' active' : ''}`} aria-pressed={valid.includes(f.key)} onClick={() => toggle(f.key)}>
-            {valid.includes(f.key) ? `${valid.indexOf(f.key) + 1}. ` : ''}{f.label}
-          </button>
-        ))}
-      </div>
+      <p className="muted small">Choose the fields to split your contacts into groups, one drop-down per field (up to 10). For example Country then Language gives one segment for each combination, named like UAE-en. Each campaign can use different fields.</p>
+      <SegmentFieldPicker available={choices} chosen={valid} onChange={setChosen} idPrefix="explorer" />
       {error && <p className="error" role="alert">{error}</p>}
       {valid.length === 0 && <p className="muted">Pick at least one field to see the segments.</p>}
       {data && (

@@ -89,19 +89,19 @@ try {
   await page.getByText('hand.added@example.com').waitFor();
   ok('deleting frees a place and a contact can be added by hand');
 
-  // ---- segments by the fields you choose (built-in and your own)
+  // ---- segments by the fields you choose (built-in and your own): one drop-down per field
   const seg = page.getByTestId('segments');
-  await seg.getByRole('button', { name: 'Country', exact: true }).click();
-  await seg.getByRole('button', { name: 'Language', exact: true }).click();
+  await seg.locator('#explorer-0').selectOption({ label: 'Country' });
+  await seg.locator('#explorer-1').selectOption({ label: 'Language' });
   await seg.getByText(/segments? from 10 contacts/).waitFor();
   assert((await seg.locator('thead th').allInnerTexts()).slice(0, 2).join('|') === 'Country|Language', 'the chosen fields are the columns, in the order chosen');
   assert((await seg.locator('tbody tr').count()) === 2, 'one segment for UAE and en, and one for the contact added by hand with those fields blank');
   assert((await seg.getByText('(blank)').count()) >= 1, 'blank values are shown as (blank)');
-  await seg.getByRole('button', { name: /Country/ }).click(); // choose another combination for another campaign
-  await seg.getByRole('button', { name: 'City', exact: true }).click();
+  await seg.locator('#explorer-0').selectOption(''); // remove Country: Language moves up
+  await seg.locator('#explorer-1').selectOption({ label: 'City' });
   await seg.locator('thead th', { hasText: 'City' }).waitFor(); // wait for the new table, not the old one
   assert((await seg.locator('thead th').allInnerTexts()).slice(0, 2).join('|') === 'Language|City', 'a different combination works');
-  ok('segments can be built from any chosen fields and changed for another campaign');
+  ok('segments can be built from any chosen fields with one drop-down each, and changed for another campaign');
 
   // ---- an Admin raises the limit, a Builder cannot see the setting
   assert((await page.getByLabel('Most contacts that can be stored').count()) === 0, 'a Builder does not see the limit setting');
@@ -115,27 +115,44 @@ try {
   assert(await page.getByRole('button', { name: 'Add a contact' }).isEnabled(), 'adding is possible again after the limit is raised');
   ok('an Admin can raise the limit; the counter and Add button follow');
 
-  // ---- a campaign chooses its segment fields, makes a test audience, and previews as a segment
+  // ---- a campaign chooses its segment fields, builds a test audience step by step, and previews as a segment
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('Segment test campaign');
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('region', { name: 'Email canvas' }).waitFor();
   await page.getByRole('tab', { name: 'Audience' }).click();
-  const fieldsGroup = page.getByRole('group', { name: 'Fields that segment this campaign' });
-  await fieldsGroup.getByRole('button', { name: 'Country', exact: true }).click();
-  await fieldsGroup.getByRole('button', { name: /Language/ }).click();
+  await page.locator('#campaign-seg-0').selectOption({ label: 'Country' });
+  await page.locator('#campaign-seg-1').selectOption({ label: 'Language' });
   await page.locator('td strong', { hasText: 'UAE-en' }).first().waitFor(); // named from the values in the order chosen
-  await page.getByRole('button', { name: 'Make the test audience', exact: true }).click();
+
+  // a field of my own can be added right here and used straight away
+  await page.getByRole('button', { name: '＋ Add a field of my own' }).click();
+  await page.getByLabel('New field name').fill('Interest');
+  await page.getByRole('button', { name: 'Add field', exact: true }).click();
+  await page.locator('#campaign-seg-2').locator('option', { hasText: 'Interest (my field)' }).waitFor({ state: 'attached' });
+
   const tests = page.getByTestId('test-audience');
-  await tests.locator('td strong', { hasText: 'UAE-en' }).waitFor();
+  await tests.getByLabel(/^Country/).fill('UAE');
+  await tests.getByLabel(/^Language/).fill('en, ar');
+  await page.getByRole('button', { name: 'Add these combinations' }).click();
+  await tests.locator('td strong', { hasText: 'UAE-ar' }).waitFor();
+  await tests.getByLabel(/^Country/).fill('FR');
+  await tests.getByLabel(/^Language/).fill('fr');
+  await page.getByRole('button', { name: 'Add these combinations' }).click();
+  await tests.locator('td strong', { hasText: 'FR-fr' }).waitFor();
+  const made = (await tests.locator('tbody td strong').allInnerTexts()).sort();
+  assert(made.join(',') === 'FR-fr,UAE-ar,UAE-en', `adding FR-fr kept UAE-en and UAE-ar and added no other combination (got ${made.join(',')})`);
   assert((await tests.getByText(/\.invalid/).count()) >= 1, 'test contacts use made-up addresses');
+  await page.getByRole('button', { name: 'Remove test contact FR-fr' }).click();
+  await tests.locator('td strong', { hasText: 'FR-fr' }).waitFor({ state: 'detached' });
+
   await page.getByRole('tab', { name: 'Preview' }).click();
   const who = page.getByLabel('Preview as');
   await who.locator('optgroup[label^="Test audience"] option', { hasText: 'UAE-en' }).first().waitFor({ state: 'attached' });
   const value = await who.locator('optgroup[label^="Test audience"] option', { hasText: 'UAE-en' }).first().getAttribute('value');
   await who.selectOption(value!);
   await page.getByTestId('previewing-as').getByText('UAE-en (test contact)').waitFor();
-  ok('a campaign chooses its segment fields, makes a test audience named like UAE-en, and previews as that segment');
+  ok('a campaign chooses its segment fields, adds its own field, builds a test audience step by step, and previews as UAE-en');
 
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');

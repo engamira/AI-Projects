@@ -28,7 +28,7 @@ function FieldInput({ field, value, onChange }: { field: FieldDef; value: PropVa
       return (
         <div className="field">
           <label className="check">
-            <input type="checkbox" checked={value === true} onChange={(e) => onChange(e.target.checked)} /> {field.label}
+            <input type="checkbox" checked={value === true} onChange={(e) => onChange(e.target.checked)} /> <span>{field.label}</span>
           </label>
         </div>
       );

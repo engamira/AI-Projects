@@ -53,7 +53,14 @@ describe('choosing the fields that segment a campaign', () => {
     expect(got.available.map((f: { key: string }) => f.key)).not.toContain('email');
     expect((await setFields(['nope'])).status).toBe(400);
     expect((await setFields(['email'])).status).toBe(400);
-    expect((await setFields(['country', 'city', 'language', 'company', 'first_name', 'last_name'])).status).toBe(400);
+    // up to 10 fields can be combined (built-in and your own); an eleventh is refused
+    await builder.post('/api/contact-fields', { label: 'Interest', type: 'text' });
+    await builder.post('/api/contact-fields', { label: 'Segment tag', type: 'text' });
+    const ten = ['country', 'city', 'language', 'company', 'first_name', 'last_name', 'customer_since', 'orders', 'vip', 'interest'];
+    expect((await setFields(ten)).status).toBe(200);
+    expect((await builder.get(`/api/campaigns/${campaignId}/audience`)).body.audience.fields).toEqual(ten);
+    expect((await setFields([...ten, 'segment_tag'])).status).toBe(400);
+    await t.db.query('DELETE FROM contact_field');
     expect((await setFields(['country'], admin)).status).toBe(403);
     expect((await setFields(['country'], qa)).status).toBe(403);
     expect((await admin.get(`/api/campaigns/${campaignId}/audience`)).status).toBe(200); // everyone who can see the campaign can see its set-up
@@ -67,52 +74,77 @@ describe('choosing the fields that segment a campaign', () => {
 });
 
 describe('the generated test audience', () => {
-  it('makes one made-up contact for each segment in your list, named like UAE-en, and never touches the real contacts', async () => {
+  const testList = async () => (await builder.get(`/api/campaigns/${campaignId}/audience`)).body.test as TestContactDto[];
+
+  it('"from my list" adds one made-up contact for each segment in your list, named like UAE-en, and never touches the real contacts', async () => {
     await setFields(['country', 'language']);
     const r = await generate({ mode: 'sheet' });
     expect(r.status).toBe(201);
-    expect(codes(r.body)).toEqual(['EG-ar', 'UAE-ar', 'UAE-en']);
-    const uae = (r.body as TestContactDto[]).find((c) => c.code === 'UAE-en')!;
+    expect(r.body).toMatchObject({ added: 3, alreadyThere: 0 });
+    expect(codes(r.body.contacts)).toEqual(['EG-ar', 'UAE-ar', 'UAE-en']);
+    const uae = (r.body.contacts as TestContactDto[]).find((c) => c.code === 'UAE-en')!;
     expect(uae.data).toMatchObject({ country: 'UAE', language: 'en', last_name: 'Test' });
     expect(uae.email.endsWith('.invalid')).toBe(true); // can never be a real mailbox
     const real = (await builder.get('/api/contacts')).body.contacts as ContactDto[];
     expect(real).toHaveLength(4); // the real list is untouched
     expect(real.some((c) => c.email.endsWith('.invalid'))).toBe(false);
-    // making it again replaces the old set rather than piling up
-    await generate({ mode: 'sheet' });
-    expect((await builder.get(`/api/campaigns/${campaignId}/audience`)).body.test).toHaveLength(3);
   });
 
-  it('"every combination" also makes the ones your list does not have yet, using values you add', async () => {
+  it('adds to what is already there: UAE with en and ar, then FR with fr, gives three combinations and nothing is overwritten', async () => {
     await setFields(['country', 'language']);
-    const r = await generate({ mode: 'all', extraValues: { country: ['SA'], language: ['fr'] } });
-    // countries UAE, EG, SA x languages en, ar, fr
-    expect(r.body).toHaveLength(9);
-    expect(codes(r.body)).toEqual(expect.arrayContaining(['SA-fr', 'EG-en', 'UAE-fr']));
+    const first = await generate({ mode: 'values', values: { country: ['UAE'], language: ['en', 'ar'] } });
+    expect(first.body).toMatchObject({ added: 2, alreadyThere: 0 });
+    expect(codes(first.body.contacts)).toEqual(['UAE-ar', 'UAE-en']);
+    const before = (await testList()).find((c) => c.code === 'UAE-en')!;
+    const second = await generate({ mode: 'values', values: { country: ['FR'], language: ['fr'] } });
+    expect(second.body).toMatchObject({ added: 1, alreadyThere: 0 });
+    expect(codes(second.body.contacts)).toEqual(['FR-fr', 'UAE-ar', 'UAE-en']); // the three combinations, and no FR-en or FR-ar
+    expect((await testList()).find((c) => c.code === 'UAE-en')!.id).toBe(before.id); // the earlier one is the same record, not remade
   });
 
-  it('refuses a huge set, empty choices and bad values, with a clear message', async () => {
+  it('a combination that already exists is skipped (capitals ignored), and adding the same thing twice changes nothing', async () => {
+    await setFields(['country', 'language']);
+    await generate({ mode: 'values', values: { country: ['UAE'], language: ['en'] } });
+    const again = await generate({ mode: 'values', values: { country: ['uae'], language: ['EN', 'ar'] } });
+    expect(again.body).toMatchObject({ added: 1, alreadyThere: 1 });
+    expect(await testList()).toHaveLength(2);
+    const sheet = await generate({ mode: 'sheet' }); // UAE-en and UAE-ar are already there; EG-ar is new
+    expect(sheet.body).toMatchObject({ added: 1, alreadyThere: 2 });
+    expect(codes(sheet.body.contacts)).toEqual(['EG-ar', 'UAE-ar', 'UAE-en']);
+  });
+
+  it('values of the chosen fields are needed, bad values are explained, and the total can never pass 60', async () => {
     expect((await generate({ mode: 'sheet' })).status).toBe(400); // no fields chosen yet
-    await setFields(['country', 'language', 'city']);
+    await setFields(['country', 'language']);
+    const missing = await generate({ mode: 'values', values: { country: ['UAE'] } });
+    expect(missing.status).toBe(400);
+    expect(missing.body.message).toContain('at least one value for Language');
     const many = Array.from({ length: 8 }, (_, i) => `V${i}`);
-    const r = await generate({ mode: 'all', extraValues: { country: many, language: many, city: many } });
-    expect(r.status).toBe(400);
-    expect(r.body.message).toContain('60');
+    await setFields(['country', 'language', 'city']);
+    const big = await generate({ mode: 'values', values: { country: many, language: many, city: many } });
+    expect(big.status).toBe(400);
+    expect(big.body.message).toContain('60');
+    expect(await testList()).toHaveLength(0); // nothing half-made
     await setFields(['orders']);
-    const bad = await generate({ mode: 'all', extraValues: { orders: ['lots'] } });
+    const bad = await generate({ mode: 'values', values: { orders: ['lots'] } });
     expect(bad.status).toBe(400);
     expect(bad.body.message).toContain('whole number');
   });
 
-  it('choosing different fields removes the old test audience, and it can be removed on purpose', async () => {
+  it('single test contacts can be removed; choosing different fields removes all of them; "remove all" works', async () => {
     await setFields(['country', 'language']);
+    const r = await generate({ mode: 'sheet' });
+    const uaeEn = (r.body.contacts as TestContactDto[]).find((c) => c.code === 'UAE-en')!;
+    expect((await builder.delete(`/api/campaigns/${campaignId}/test-audience/${uaeEn.id}`)).status).toBe(204);
+    expect((await builder.delete(`/api/campaigns/${campaignId}/test-audience/${uaeEn.id}`)).status).toBe(404);
+    expect(codes(await testList())).toEqual(['EG-ar', 'UAE-ar']);
+    expect((await qa.delete(`/api/campaigns/${campaignId}/test-audience/${uaeEn.id}`)).status).toBe(403);
+    await setFields(['language']); // different fields: the old combinations no longer make sense
+    expect(await testList()).toHaveLength(0);
     await generate({ mode: 'sheet' });
-    await setFields(['language']);
-    expect((await builder.get(`/api/campaigns/${campaignId}/audience`)).body.test).toHaveLength(0);
-    await generate({ mode: 'sheet' });
-    expect((await builder.get(`/api/campaigns/${campaignId}/audience`)).body.test).toHaveLength(2);
+    expect(await testList()).toHaveLength(2);
     expect((await builder.delete(`/api/campaigns/${campaignId}/test-audience`)).status).toBe(204);
-    expect((await builder.get(`/api/campaigns/${campaignId}/audience`)).body.test).toHaveLength(0);
+    expect(await testList()).toHaveLength(0);
   });
 
   it('the database refuses a test contact whose address could be real, and deleting the campaign removes its test audience', async () => {
@@ -135,7 +167,7 @@ describe('Preview as a segment', () => {
   it('lists the test audience and the contacts of each segment by name, and shows the email as that recipient', async () => {
     await withGreeting();
     await setFields(['country', 'language']);
-    const tests = (await generate({ mode: 'sheet' })).body as TestContactDto[];
+    const tests = (await generate({ mode: 'sheet' })).body.contacts as TestContactDto[];
     const rec = (await builder.get(`/api/campaigns/${campaignId}/preview-recipients`)).body as PreviewRecipientsResponse;
     expect(rec.segmentFields.map((f) => f.key)).toEqual(['country', 'language']);
     const titles = rec.groups.map((g) => g.title);
@@ -155,7 +187,7 @@ describe('Preview as a segment', () => {
   it('a QA reviewer can preview as a test contact but never sees or previews as a real contact', async () => {
     await withGreeting();
     await setFields(['country', 'language']);
-    const tests = (await generate({ mode: 'sheet' })).body as TestContactDto[];
+    const tests = (await generate({ mode: 'sheet' })).body.contacts as TestContactDto[];
     const rec = (await qa.get(`/api/campaigns/${campaignId}/preview-recipients`)).body as PreviewRecipientsResponse;
     expect(rec.groups.map((g) => g.title)).toEqual(['Built-in examples', 'Test audience (made up for this campaign)']);
     expect(JSON.stringify(rec)).not.toContain('@example.com');

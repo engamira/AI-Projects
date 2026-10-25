@@ -30,6 +30,7 @@ import {
   valueLabel,
   type ContactField,
   type SegmentsResponse,
+  type TestAudienceResult,
   type TestContactDto,
   campaignStatus,
   applyItem,
@@ -45,6 +46,7 @@ import {
 import { api, errorText } from '../api';
 import { useSession } from '../session';
 import { BlockView } from './BlockView';
+import { SegmentFieldPicker } from '../components/SegmentFieldPicker';
 import { FieldForm } from './Fields';
 import { flushSave, useEditor } from './store';
 import { useBrand } from './useBrand';
@@ -359,12 +361,35 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
 // ---------- Audience set-up for this campaign ----------
 type AudienceInfo = { audience: { fields: string[] }; available: ContactField[]; test: TestContactDto[] };
 
+/** Add a field of your own (for example "Interest") while setting up a campaign; it is then available to every campaign. */
+function AddFieldInline({ onAdded }: { onAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [type, setType] = useState('text');
+  const [error, setError] = useState('');
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    try { await api('POST', '/api/contact-fields', { label, type }); setLabel(''); setOpen(false); onAdded(); } catch (err) { setError(errorText(err)); }
+  }
+  if (!open) return <p><button type="button" className="link" onClick={() => setOpen(true)}>＋ Add a field of my own</button></p>;
+  return (
+    <form className="inline-form" onSubmit={(e) => void add(e)} aria-label="Add a field of my own">
+      <div><label htmlFor="inline-field-name">New field name</label><input id="inline-field-name" maxLength={40} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Interest" /></div>
+      <div><label htmlFor="inline-field-type">Kind of values</label>
+        <select id="inline-field-type" value={type} onChange={(e) => setType(e.target.value)}><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="boolean">Yes / no</option></select></div>
+      <div className="inline-form-actions"><button className="primary" disabled={!label.trim()}>Add field</button><button type="button" onClick={() => setOpen(false)}>Cancel</button></div>
+      {error && <p className="error" role="alert" style={{ flexBasis: '100%' }}>{error}</p>}
+    </form>
+  );
+}
+
 function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: boolean }) {
   const { can } = useSession();
   const [info, setInfo] = useState<AudienceInfo | null>(null);
   const [segs, setSegs] = useState<SegmentsResponse | null>(null);
-  const [mode, setMode] = useState<'sheet' | 'all'>('sheet');
-  const [extra, setExtra] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [note, setNote] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -384,14 +409,15 @@ function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: bo
   const chosen = info?.audience.fields ?? [];
   const chosenFields = chosen.map((k) => info?.available.find((f) => f.key === k)).filter((f): f is ContactField => !!f);
 
-  function toggle(key: string) {
-    const next = chosen.includes(key) ? chosen.filter((k) => k !== key) : [...chosen, key];
-    if (info && info.test.length && !window.confirm('Changing the fields removes the test audience made for this campaign. Continue?')) return;
+  function changeFields(next: string[]) {
+    if (info && info.test.length && next.join() !== chosen.join() && !window.confirm('Changing the fields removes the test audience made for this campaign. Continue?')) return;
     void guarded(async () => { await api('PUT', `/api/campaigns/${campaignId}/audience`, { fields: next }); });
   }
-  const generate = () => guarded(async () => {
-    const extraValues = Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, v.split(',').map((s) => s.trim()).filter(Boolean)]));
-    await api('POST', `/api/campaigns/${campaignId}/test-audience`, { mode, extraValues });
+  const generate = (mode: 'sheet' | 'values') => guarded(async () => {
+    const vals = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, v.split(',').map((s) => s.trim()).filter(Boolean)]));
+    const r = await api<TestAudienceResult>('POST', `/api/campaigns/${campaignId}/test-audience`, { mode, values: mode === 'values' ? vals : undefined });
+    setNote(r.added === 0 ? 'Nothing new to add: those combinations are already in the test audience.' : `Added ${r.added} test contact${r.added === 1 ? '' : 's'}${r.alreadyThere ? ` (${r.alreadyThere} already there)` : ''}.`);
+    if (mode === 'values') setValues({});
   });
 
   return (
@@ -399,14 +425,10 @@ function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: bo
       <h2>Who this campaign is for</h2>
       <p className="muted small">Choose the fields that split this campaign's audience into segments, for example Country and Language. A segment is named from its values, such as UAE-en or EG-ar, and those names appear in Preview and test sends. Each campaign can use different fields.</p>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="seg-fields" role="group" aria-label="Fields that segment this campaign">
-        {(info?.available ?? []).map((f) => (
-          <button key={f.key} type="button" disabled={!canEdit || busy} className={`folder-chip${chosen.includes(f.key) ? ' active' : ''}`} aria-pressed={chosen.includes(f.key)} onClick={() => toggle(f.key)}>
-            {chosen.includes(f.key) ? `${chosen.indexOf(f.key) + 1}. ` : ''}{f.label.replace(/ \(.*\)$/, '')}
-          </button>
-        ))}
-      </div>
+      <SegmentFieldPicker available={info?.available ?? []} chosen={chosen} disabled={!canEdit || busy} onChange={changeFields} idPrefix="campaign-seg" />
+      {canEdit && can('audience.manage') && <AddFieldInline onAdded={() => void guarded(async () => undefined)} />}
       {!canEdit && <p className="muted small">Only a Builder can change this, and only while the campaign is a draft.</p>}
+      {note && <p className="ok" role="status">{note}</p>}
 
       {chosen.length === 0 && <p className="muted">Pick at least one field to see the segments and to create a test audience.</p>}
       {segs && (
@@ -427,28 +449,26 @@ function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: bo
           <p className="muted small">Made-up contacts, one for each segment, to try this email against. They are not part of your contact list, they are never emailed, and they use made-up addresses ending in .invalid. Pick one in the Preview tab with "Preview as".</p>
           {canEdit && (
             <>
-              <div className="radio-row" role="radiogroup" aria-label="How to make the test audience">
-                <label className="check"><input type="radio" name="mode" checked={mode === 'sheet'} onChange={() => setMode('sheet')} /> One for each segment in my contact list</label>
-                <label className="check"><input type="radio" name="mode" checked={mode === 'all'} onChange={() => setMode('all')} /> Every combination of the values (including ones I type below)</label>
-              </div>
+              <p className="small"><strong>Add combinations.</strong> Type the values for each field. Every value you list for one field is combined with the values you list for the others, and anything already in the test audience is kept. For example Country UAE with Language en, ar adds UAE-en and UAE-ar. Then add Country FR with Language fr for FR-fr.</p>
               <div className="map-grid">
                 {chosenFields.map((f) => (
-                  <label key={f.key}>Extra values for {f.label.replace(/ \(.*\)$/, '')} <span className="muted small">(separate with commas)</span>
-                    <input value={extra[f.key] ?? ''} placeholder="e.g. SA, KW" onChange={(e) => setExtra({ ...extra, [f.key]: e.target.value })} />
+                  <label key={f.key}>{f.label.replace(/ \(.*\)$/, '')} <span className="muted small">(separate several with commas)</span>
+                    <input value={values[f.key] ?? ''} placeholder={f.type === 'text' ? 'e.g. UAE' : ''} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
                   </label>
                 ))}
               </div>
               <div className="row" style={{ marginTop: 10 }}>
-                <div style={{ flex: '0 0 auto' }}><button type="button" className="primary" disabled={busy} onClick={() => void generate()}>{(info?.test.length ?? 0) > 0 ? 'Make the test audience again' : 'Make the test audience'}</button></div>
-                {(info?.test.length ?? 0) > 0 && <button type="button" disabled={busy} onClick={() => void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience`); })}>Remove it</button>}
+                <div style={{ flex: '0 0 auto' }}><button type="button" className="primary" disabled={busy || chosenFields.some((f) => !(values[f.key] ?? '').trim())} onClick={() => void generate('values')}>Add these combinations</button></div>
+                <div style={{ flex: '0 0 auto' }}><button type="button" disabled={busy} onClick={() => void generate('sheet')}>Add the segments from my contact list</button></div>
+                {(info?.test.length ?? 0) > 0 && <button type="button" disabled={busy} onClick={() => { if (window.confirm('Remove every test contact of this campaign?')) void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience`); }); }}>Remove all</button>}
               </div>
             </>
           )}
           {(info?.test.length ?? 0) > 0 && (
             <div className="table-scroll" style={{ marginTop: 10 }}>
               <table>
-                <thead><tr><th>Segment</th><th>Test contact</th><th>Made-up address</th></tr></thead>
-                <tbody>{info!.test.map((c) => <tr key={c.id}><td><strong>{c.code}</strong></td><td>{String(c.data.first_name ?? '')} {String(c.data.last_name ?? '')}</td><td className="muted small">{c.email}</td></tr>)}</tbody>
+                <thead><tr><th>Segment</th><th>Test contact</th><th>Made-up address</th><th></th></tr></thead>
+                <tbody>{info!.test.map((c) => <tr key={c.id}><td><strong>{c.code}</strong></td><td>{String(c.data.first_name ?? '')} {String(c.data.last_name ?? '')}</td><td className="muted small">{c.email}</td><td>{canEdit && <button type="button" className="link danger" aria-label={`Remove test contact ${c.code}`} disabled={busy} onClick={() => void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience/${c.id}`); })}>Remove</button>}</td></tr>)}</tbody>
               </table>
             </div>
           )}

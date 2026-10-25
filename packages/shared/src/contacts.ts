@@ -7,6 +7,8 @@ export const CONTACT_LIMIT_CEILING = 1000;
 export const IMPORT_MAX_BYTES = 1024 * 1024;
 export const IMPORT_MAX_ROWS = 1000;
 export const MAX_CUSTOM_FIELDS = 20;
+/** How many fields a campaign (or the segment explorer) can combine to make segments. */
+export const MAX_SEGMENT_FIELDS = 10;
 
 export type ContactFieldType = 'text' | 'number' | 'date' | 'boolean';
 
@@ -258,11 +260,12 @@ export type CampaignAudienceDto = { fields: string[] };
 export type TestContactDto = { id: string; code: string; email: string; data: Record<string, string | number | boolean | null> };
 
 export type TestAudienceRequest = {
-  /** "sheet": one test contact for each segment that exists in your contact list. "all": every combination of the values (from your list plus the extra values below). */
-  mode: 'sheet' | 'all';
-  /** Extra values to include for a field (field key -> values), for combinations your list does not have yet. */
-  extraValues?: Record<string, string[]>;
+  /** "sheet": add one test contact for each segment that exists in your contact list. "values": add the combinations of the values you type (for each field, every value you list is combined with the values of the other fields). */
+  mode: 'sheet' | 'values';
+  /** For mode "values": the values for each segment field (field key -> values). Example: country UAE, language en and ar adds UAE-en and UAE-ar. */
+  values?: Record<string, string[]>;
 };
+export type TestAudienceResult = { contacts: TestContactDto[]; added: number; alreadyThere: number };
 export const TEST_AUDIENCE_MAX = 60;
 
 export type PreviewRecipient = { id: string; label: string };

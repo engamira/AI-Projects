@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 import {
-  CONTACT_FIELDS, CONTACT_LIMIT_CEILING, CUSTOM_FIELD_LABEL_MAX, DEFAULT_CONTACT_LIMIT, IMPORT_MAX_ROWS, MAX_CUSTOM_FIELDS,
+  CONTACT_FIELDS, CONTACT_LIMIT_CEILING, CUSTOM_FIELD_LABEL_MAX, DEFAULT_CONTACT_LIMIT, IMPORT_MAX_ROWS, MAX_CUSTOM_FIELDS, MAX_SEGMENT_FIELDS,
   asField, customFieldKey, emailKey, exclusionReason, isStandardField, isValidEmail, parseCell, segmentContacts,
   type ContactDto, type ContactField, type ContactFieldType, type CustomFieldDto, type ImportPreview, type ImportRowIssue, type NewFieldRequest, type ParsedValue, type SegmentsResponse,
 } from '@cl/shared';
@@ -111,7 +111,7 @@ export async function segments(q: Queryable, keys: string[]): Promise<SegmentsRe
     if (!chosen.includes(f)) chosen.push(f);
   }
   if (chosen.length === 0) return { error: 'Choose at least one field to segment by.' };
-  if (chosen.length > 5) return { error: 'Choose at most 5 fields.' };
+  if (chosen.length > MAX_SEGMENT_FIELDS) return { error: `Choose at most ${MAX_SEGMENT_FIELDS} fields.` };
   const contacts = await listContacts(q);
   return {
     fields: chosen,

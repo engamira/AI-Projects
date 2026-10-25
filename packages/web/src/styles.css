@@ -317,4 +317,19 @@ ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .field-chips li { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; background: var(--surface); }
 .radio-row { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .audience-pane { max-width: 980px; }
+/* Labels that wrap a checkbox or radio: control and text on one line, control never stretched to full width */
+label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; margin: 6px 0; }
+label.check input[type='checkbox'], label.check input[type='radio'], .field label.check input { width: auto; flex: none; margin: 0; }
+.seg-picker { display: grid; gap: 10px; margin: 8px 0 12px; max-width: 640px; }
+.seg-picker-row { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 4px 12px; align-items: center; }
+.seg-picker-row label { margin: 0; }
+.seg-picker-row select { margin: 0; }
+.inline-form { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin: 8px 0 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: var(--radius); }
+.inline-form > div { flex: 1 1 200px; }
+.inline-form label { margin: 0 0 4px; }
+.inline-form .inline-form-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+/* forms laid out in a row: every label sits directly above its field and the buttons line up with the fields */
+.row { align-items: flex-end; }
+.row > div > label:first-child { margin-top: 0; }
+@media (max-width: 600px) { .seg-picker-row { grid-template-columns: 1fr; } }
 .seg-fields { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
