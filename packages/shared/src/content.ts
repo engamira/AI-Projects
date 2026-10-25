@@ -23,11 +23,32 @@ export type EmailSettings = {
   fontFamily: string;
 };
 
+/** The words and blocks of one email: the campaign's Default version, or the version made for one segment. */
+export type EmailVersion = { settings: EmailSettings; blocks: BlockInstance[] };
+
+/**
+ * An email written for one segment of the audience (for example Country UAE + Language ar = "UAE-ar"). It is a full,
+ * independent copy: later changes to the Default do not reach it. Contacts in a segment without a version get the Default.
+ */
+export type SegmentVersion = EmailVersion & {
+  id: string;
+  /** The contact fields that define the segment, in order (their keys). */
+  fields: string[];
+  /** The value of each field as shown in the segment name; '' = blank. */
+  values: string[];
+  /** Identifies the combination for matching (see segmentKey in versions.ts). */
+  key: string;
+};
+
 export type EmailContent = {
   schemaVersion: 1;
   settings: EmailSettings;
   blocks: BlockInstance[];
+  /** Versions written for particular segments. Absent when there are none. */
+  variants?: SegmentVersion[];
 };
+
+export const MAX_VARIANTS = 50;
 
 export const MAX_BLOCKS = 100;
 
@@ -71,7 +92,13 @@ export const emptyContent = (palette: PaletteId = 'travel'): EmailContent => ({ 
  */
 export function normalizeContent<T>(input: T): T {
   if (!input || typeof input !== 'object') return input;
-  const c = JSON.parse(JSON.stringify(input)) as { settings?: Record<string, unknown>; blocks?: { type?: string; props?: Record<string, unknown> }[] };
+  const c = JSON.parse(JSON.stringify(input)) as { settings?: Record<string, unknown>; blocks?: { type?: string; props?: Record<string, unknown> }[]; variants?: unknown };
+  cleanVersion(c);
+  if (Array.isArray(c.variants)) for (const v of c.variants) if (v && typeof v === 'object') cleanVersion(v as { settings?: Record<string, unknown>; blocks?: { type?: string; props?: Record<string, unknown> }[] });
+  return c as T;
+}
+
+function cleanVersion(c: { settings?: Record<string, unknown>; blocks?: { type?: string; props?: Record<string, unknown> }[] }): void {
   if (c.settings && typeof c.settings === 'object') {
     delete c.settings.backgroundColor;
     delete c.settings.contentBackground;
@@ -85,7 +112,6 @@ export function normalizeContent<T>(input: T): T {
       if (legacy && b.props && typeof b.props === 'object') for (const k of legacy) delete b.props[k];
     }
   }
-  return c as T;
 }
 
 /** Dropping a block creates an independent copy: nothing is shared with the library definition. */
@@ -105,7 +131,13 @@ export function cloneBlock(b: BlockInstance): BlockInstance {
 
 export function cloneContent(c: EmailContent, newIds = false): EmailContent {
   const copy = JSON.parse(JSON.stringify(c)) as EmailContent;
-  if (newIds) copy.blocks = copy.blocks.map((b) => ({ ...b, id: crypto.randomUUID() }));
+  if (newIds) {
+    // the same block keeps the same new id in every version, so "copy this block to all versions" still works in the copy
+    const ids = new Map<string, string>();
+    const fresh = (id: string) => { let n = ids.get(id); if (!n) { n = crypto.randomUUID(); ids.set(id, n); } return n; };
+    copy.blocks = copy.blocks.map((b) => ({ ...b, id: fresh(b.id) }));
+    if (copy.variants) copy.variants = copy.variants.map((v) => ({ ...v, id: crypto.randomUUID(), blocks: v.blocks.map((b) => ({ ...b, id: fresh(b.id) })) }));
+  }
   return copy;
 }
 
@@ -174,10 +206,20 @@ export function checkFields(fields: FieldDef[], values: Record<string, unknown>,
   return null;
 }
 
+const blockShape = z.object({ id: z.string().uuid(), type: z.string(), sourceVersion: z.number().int().min(1), props: z.record(z.string(), z.unknown()) }).strict();
+
 const envelope = z.object({
   schemaVersion: z.literal(1),
   settings: z.record(z.string(), z.unknown()),
-  blocks: z.array(z.object({ id: z.string().uuid(), type: z.string(), sourceVersion: z.number().int().min(1), props: z.record(z.string(), z.unknown()) }).strict()).max(MAX_BLOCKS),
+  blocks: z.array(blockShape).max(MAX_BLOCKS),
+  variants: z.array(z.object({
+    id: z.string().uuid(),
+    fields: z.array(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/)).min(1).max(10),
+    values: z.array(z.string().max(200)).min(1).max(10),
+    key: z.string().min(1).max(2500),
+    settings: z.record(z.string(), z.unknown()),
+    blocks: z.array(blockShape).max(MAX_BLOCKS),
+  }).strict()).max(MAX_VARIANTS).optional(),
 }).strict();
 
 export type ValidationResult = { ok: true; content: EmailContent } | { ok: false; error: string };
@@ -188,26 +230,50 @@ export function validateContent(input: unknown): ValidationResult {
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid email content.' };
   const c = parsed.data;
 
-  const { palette, ...otherSettings } = c.settings;
+  const { palette } = c.settings;
   if (typeof palette !== 'string' || !(PALETTE_IDS as readonly string[]).includes(palette)) {
     return { ok: false, error: 'Email settings: unknown template colors' };
   }
-  const settingsErr = checkFields(SETTINGS_FIELDS, otherSettings, 'Email settings');
-  if (settingsErr) return { ok: false, error: settingsErr };
+  const main = checkVersion(c.settings, c.blocks, palette, '');
+  if (main) return { ok: false, error: main };
 
-  const seen = new Set<string>();
-  for (const [i, b] of c.blocks.entries()) {
-    if (seen.has(b.id)) return { ok: false, error: `Block ${i + 1}: duplicate id` };
-    seen.add(b.id);
-    if (!(BLOCK_TYPES as readonly string[]).includes(b.type)) return { ok: false, error: `Block ${i + 1}: unknown block type "${b.type}"` };
-    const def = blockDefinition(b.type)!;
-    if (def.category !== 'shared' && def.category !== palette) {
-      return { ok: false, error: `Block ${i + 1} (${def.label}) belongs to the ${def.category} template and cannot be used in this email.` };
-    }
-    const err = checkFields(def.fields, b.props, `Block ${i + 1} (${def.label})`);
+  const variants = c.variants ?? [];
+  const ids = new Set<string>();
+  const keys = new Set<string>();
+  for (const v of variants) {
+    const name = `Version for segment ${v.values.map((x) => x || 'blank').join('-')}: `;
+    if (ids.has(v.id)) return { ok: false, error: `${name}duplicate id` };
+    ids.add(v.id);
+    if (keys.has(v.key)) return { ok: false, error: `${name}there are two versions for the same segment` };
+    keys.add(v.key);
+    if (v.fields.length !== v.values.length) return { ok: false, error: `${name}the values do not match the fields` };
+    if (v.settings.palette !== palette) return { ok: false, error: `${name}the template colors must be the same as the Default version` };
+    const err = checkVersion(v.settings, v.blocks, palette, name);
     if (err) return { ok: false, error: err };
   }
-  return { ok: true, content: c as unknown as EmailContent };
+  const out = { ...c } as unknown as EmailContent;
+  if (!variants.length) delete out.variants; // an email without versions is stored exactly as before
+  return { ok: true, content: out };
+}
+
+/** Checks the settings and blocks of one version (the Default or a segment's). Returns an error message or null. */
+function checkVersion(settings: Record<string, unknown>, blocks: { id: string; type: string; props: Record<string, unknown> }[], palette: string, prefix: string): string | null {
+  const { palette: _p, ...otherSettings } = settings;
+  const settingsErr = checkFields(SETTINGS_FIELDS, otherSettings, `${prefix}Email settings`);
+  if (settingsErr) return settingsErr;
+  const seen = new Set<string>();
+  for (const [i, b] of blocks.entries()) {
+    if (seen.has(b.id)) return `${prefix}Block ${i + 1}: duplicate id`;
+    seen.add(b.id);
+    if (!(BLOCK_TYPES as readonly string[]).includes(b.type)) return `${prefix}Block ${i + 1}: unknown block type "${b.type}"`;
+    const def = blockDefinition(b.type)!;
+    if (def.category !== 'shared' && def.category !== palette) {
+      return `${prefix}Block ${i + 1} (${def.label}) belongs to the ${def.category} template and cannot be used in this email.`;
+    }
+    const err = checkFields(def.fields, b.props, `${prefix}Block ${i + 1} (${def.label})`);
+    if (err) return err;
+  }
+  return null;
 }
 
 /** Stable JSON (sorted keys) so the same content always has the same hash. */

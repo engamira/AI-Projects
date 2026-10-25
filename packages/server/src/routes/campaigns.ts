@@ -8,6 +8,8 @@ import {
   campaignStatus,
   hasCapability,
   emptyContent,
+  flatContent,
+  pickVariant,
   normalizeContent,
   starterContent,
   validateContent,
@@ -20,7 +22,7 @@ import {
   type SaveDraftResponse,
 } from '@cl/shared';
 import { missingAssets } from '../assets.js';
-import { resolveRecipient } from '../campaignAudience.js';
+import { getAudienceFields, resolveRecipient } from '../campaignAudience.js';
 import { allFields } from '../contacts.js';
 import { roleEditRefusal } from '../editrules.js';
 import { listLibrary } from '../blocklib.js';
@@ -288,10 +290,11 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
   });
 
   // ---- preview: the same renderer that QA and sending will use ----
-  app.get<{ Params: { id: string }; Querystring: { revision?: string; as?: string } }>('/api/campaigns/:id/preview', { config: { access: 'campaign.view' } }, async (req, reply): Promise<PreviewResponse | FastifyReply> => {
+  app.get<{ Params: { id: string }; Querystring: { revision?: string; as?: string; variant?: string } }>('/api/campaigns/:id/preview', { config: { access: 'campaign.view' } }, async (req, reply): Promise<PreviewResponse | FastifyReply> => {
     const { id } = idParam.parse(req.params);
     const rid = z.string().uuid().optional().parse(req.query.revision);
     const as = z.string().max(80).default('sample').parse(req.query.as);
+    const variantId = z.string().uuid().optional().parse(req.query.variant);
     const who = await resolveRecipient(db, id, as, hasCapability(req.auth!.user.role, 'audience.manage'));
     if (who.kind === 'not_found') return reply.status(400).send({ error: 'invalid_recipient', message: 'That recipient does not exist (any more).' });
     if (who.kind === 'forbidden') return reply.status(403).send({ error: 'forbidden' });
@@ -303,10 +306,16 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       if (!r.rows[0]) return notFound(reply);
       content = normalizeContent(r.rows[0].content);
     }
+    // Which version: the one asked for (while editing it), else the one this recipient would receive, else the Default.
+    let variant = variantId ? content.variants?.find((v) => v.id === variantId) ?? null : null;
+    if (variantId && !variant) return reply.status(400).send({ error: 'invalid_version', message: 'That version does not exist (any more).' });
+    if (!variant && who.kind === 'recipient' && who.recipient) variant = pickVariant(content, await getAudienceFields(db, id), who.recipient);
+    const flat = flatContent(content, variant);
     // Every email shows the shared header and footer of its template (latest version).
     const brand = await latestProfile(db, content.settings.palette);
     const knownFields = (await allFields(db)).map((f) => f.key);
-    const out = await renderEmail(content, { baseUrl: config.baseUrl, brand, knownFields, ...(who.kind === 'recipient' ? { recipient: who.recipient } : {}) });
+    const out = await renderEmail(flat, { baseUrl: config.baseUrl, brand, knownFields, ...(who.kind === 'recipient' ? { recipient: who.recipient } : {}) });
+    if (content.variants?.length) out.versionLabel = variant ? `${variant.values.map((x) => x || 'blank').join('-')} version` : 'Default version';
     return who.kind === 'recipient' ? { ...out, recipientLabel: who.label } : out;
   });
 }

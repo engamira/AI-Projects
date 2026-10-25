@@ -125,6 +125,7 @@ export * from './contacts.js';
 export * from './content.js';
 export * from './personalize.js';
 export * from './presets.js';
+export * from './versions.js';
 
 import type { BlockDefinition } from './blocks.js';
 import type { EmailContent } from './content.js';
@@ -156,4 +157,7 @@ export type RevisionDto = {
   hash: string;
   restoredFromNumber: number | null;
 };
-export type PreviewResponse = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[]; recipientLabel?: string };
+export type PreviewResponse = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[]; recipientLabel?: string;
+  /** Which version of the email is shown, when the campaign has versions for segments. */
+  versionLabel?: string;
+};

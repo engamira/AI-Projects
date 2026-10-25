@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs before every commit: the project must type-check and its tests must pass, so no broken commit is made.
+# (Browser tests take longer and run in CI on every push and every night.)
+echo "pre-commit: type-checking and running tests..."
+npm run build -w @cl/shared >/dev/null 2>&1 || { echo "pre-commit: building the shared package failed"; exit 1; }
+npm run typecheck || { echo "pre-commit: type-check failed, commit stopped"; exit 1; }
+npm test || { echo "pre-commit: tests failed, commit stopped"; exit 1; }
+echo "pre-commit: all good"

@@ -32,7 +32,9 @@ try {
     const client = await t.sessionFor(await t.seedUser(role, { totp: true }));
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await ctx.addCookies([{ name: 'cl_session', value: client.sessionToken!, url: BASE }]);
-    return await ctx.newPage();
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => console.log("PAGE ERROR:", e.message));
+    return pg;
   };
 
   const page = await open('builder');
@@ -153,6 +155,32 @@ try {
   await who.selectOption(value!);
   await page.getByTestId('previewing-as').getByText('UAE-en (test contact)').waitFor();
   ok('a campaign chooses its segment fields, adds its own field, builds a test audience step by step, and previews as UAE-en');
+
+  // ---- one email per segment: a Default version plus an independent copy for UAE-ar
+  await page.getByRole('tab', { name: 'Edit' }).click();
+  await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
+  await page.getByLabel('Heading', { exact: true }).fill('Default heading');
+  await page.getByRole('tab', { name: 'Audience' }).click();
+  await page.getByRole('button', { name: 'Create a version for UAE-ar' }).click(); // opens the Edit tab on the new version
+  const bar = page.getByTestId('version-bar');
+  await bar.getByText('You are editing the UAE-ar version').waitFor();
+  await page.locator('[data-block-type="text"]').last().click();
+  const copied = await page.getByLabel('Heading', { exact: true }).inputValue();
+  assert(copied === 'Default heading', `a new version starts as a copy of the Default (got "${copied}")`);
+  await page.getByLabel('Heading', { exact: true }).fill('Arabic heading');
+  await bar.getByLabel('Editing version').selectOption({ label: 'Default version' });
+  await page.locator('[data-block-type="text"]').last().click();
+  assert((await page.getByLabel('Heading', { exact: true }).inputValue()) === 'Default heading', 'editing a version never changes the Default');
+  await page.getByText('All changes saved').waitFor();
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  const who2 = page.getByLabel('Preview as');
+  const arId = await who2.locator('optgroup[label^="Test audience"] option', { hasText: 'UAE-ar' }).first().getAttribute('value');
+  await who2.selectOption(arId!);
+  await page.getByTestId('shown-version').getByText('UAE-ar version').waitFor();
+  const enId = await who2.locator('optgroup[label^="Test audience"] option', { hasText: 'UAE-en' }).first().getAttribute('value');
+  await who2.selectOption(enId!);
+  await page.getByTestId('shown-version').getByText('Default version').waitFor();
+  ok('a segment gets its own independent version; contacts of other segments get the Default');
 
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');

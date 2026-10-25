@@ -333,3 +333,8 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .row > div > label:first-child { margin-top: 0; }
 @media (max-width: 600px) { .seg-picker-row { grid-template-columns: 1fr; } }
 .seg-fields { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+
+/* Which version of the email is being edited */
+.version-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 16px; background: var(--accent-soft, #eef4ff); border-bottom: 1px solid var(--border); }
+.version-bar label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.version-bar select { width: auto; }

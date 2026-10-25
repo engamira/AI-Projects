@@ -17,6 +17,11 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from '@dnd-kit/utilities';
 import {
   SETTINGS_FIELDS,
+  activeVariants,
+  parseCell,
+  segmentKey,
+  variantCode,
+  versionOf,
   blockDefinition,
   paletteOf,
   type BlockDefinition,
@@ -64,6 +69,13 @@ function useLibrary(): BlockDefinition[] {
   return defs;
 }
 
+/** The words and blocks being edited: the Default version, or the segment version chosen in the bar above the canvas. */
+function useDoc() {
+  const content = useEditor((s) => s.content);
+  const editing = useEditor((s) => s.editing);
+  return versionOf(content, editing);
+}
+
 // ---------- Library (originals) ----------
 function LibraryItem({ def, canEdit: canEditBasic, compact }: { def: BlockDefinition; canEdit: boolean; compact?: boolean }) {
   const { can } = useSession();
@@ -86,7 +98,8 @@ function LibraryItem({ def, canEdit: canEditBasic, compact }: { def: BlockDefini
 function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: BlockInstance; index: number; total: number; canEdit: boolean }) {
   const { can } = useSession();
   const canEdit = block.type === 'custom_html' ? can('html.custom') : canEditBasic;
-  const { content, selectedId, select, moveBlock, duplicateBlock, deleteBlock } = useEditor();
+  const { selectedId, select, moveBlock, duplicateBlock, deleteBlock } = useEditor();
+  const doc = useDoc();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, disabled: !canEdit });
   const def = blockDefinition(block.type);
   const selected = selectedId === block.id;
@@ -110,13 +123,14 @@ function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: 
           </span>
         )}
       </div>
-      <div className="block-body"><BlockView block={block} settings={content.settings} /></div>
+      <div className="block-body"><BlockView block={block} settings={doc.settings} /></div>
     </div>
   );
 }
 
 function Canvas({ canEdit }: { canEdit: boolean }) {
-  const { content, select } = useEditor();
+  const select = useEditor((s) => s.select);
+  const content = useDoc();
   const { setNodeRef, isOver } = useDroppable({ id: 'canvas-end' });
   const st = content.settings;
   const pal = paletteOf(st.palette);
@@ -190,7 +204,9 @@ function PresetPicker({ type, props, canEdit, on, onToggle, onChoose }: { type: 
 }
 
 function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
-  const { content, selectedId, setProp, setProps, setSetting } = useEditor();
+  const { selectedId, setProp, setProps, setSetting, copyBlockToOthers } = useEditor();
+  const hasVersions = useEditor((s) => (s.content.variants?.length ?? 0) > 0);
+  const content = useDoc();
   const { can } = useSession();
   const [readyMade, setReadyMade] = useState<Record<string, boolean>>({}); // per block, this session only
   const block = content.blocks.find((b) => b.id === selectedId);
@@ -217,6 +233,9 @@ function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
           disabled={!canEdit}
           onChange={(k, v: PropValue) => setProp(block.id, k, v)}
         />
+        {hasVersions && canEditBasic && block.type !== 'custom_html' && (
+          <p><button type="button" onClick={() => copyBlockToOthers(block.id)} title="Puts an independent copy of this block into every other version of the email, replacing the same block there if it exists">Copy this block to all other versions</button></p>
+        )}
       </>
     );
   }
@@ -294,6 +313,7 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
   const [as, setAs] = useState<string>('sample');
   const [recipients, setRecipients] = useState<PreviewRecipientsResponse | null>(null);
   const [shownAs, setShownAs] = useState('');
+  const [shownVersion, setShownVersion] = useState('');
   const [showText, setShowText] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState('');
@@ -306,7 +326,7 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
       try {
         if (!revision && !(await flushSave())) throw new Error('Fix the problem shown at the top before previewing.');
         const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview?as=${as}${revision ? `&revision=${revision.id}` : ''}`);
-        if (live) { setShownAs(r.recipientLabel ?? ''); setHtml(r.html); setText(r.text); setIssues(r.placeholderIssues); setWarnings(r.warnings); setError(''); }
+        if (live) { setShownAs(r.recipientLabel ?? ''); setShownVersion(r.versionLabel ?? ''); setHtml(r.html); setText(r.text); setIssues(r.placeholderIssues); setWarnings(r.warnings); setError(''); }
       } catch (e) {
         if (live) setError(errorText(e));
       }
@@ -340,7 +360,7 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
           <ul>{issues.map((i, k) => <li key={k}><code>{i.text}</code> — {i.message}</li>)}</ul>
         </div>
       )}
-      {shownAs && <p className="small" data-testid="previewing-as">Previewing as <strong>{shownAs}</strong></p>}
+      {(shownAs || shownVersion) && <p className="small" data-testid="previewing-as">{shownAs && <>Previewing as <strong>{shownAs}</strong></>}{shownAs && shownVersion && ' · '}{shownVersion && <>Showing the <strong data-testid="shown-version">{shownVersion}</strong></>}</p>}
       <p className="muted small">Browser preview. It is not an Outlook or Gmail simulation: real email apps can render differently.</p>
       {error && <p className="error" role="alert">{error}</p>}
       {warnings.length > 0 && <details><summary>{warnings.length} rendering note(s)</summary><pre>{warnings.join('\n')}</pre></details>}
@@ -384,7 +404,113 @@ function AddFieldInline({ onAdded }: { onAdded: () => void }) {
   );
 }
 
-function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: boolean }) {
+/** One email per segment: which segments have their own version, and creating, opening or removing them. */
+function SegmentVersionsCard({ chosen, chosenFields, segs, test, canEdit, onOpen }: {
+  chosen: string[]; chosenFields: ContactField[]; segs: SegmentsResponse | null; test: TestContactDto[]; canEdit: boolean; onOpen: () => void;
+}) {
+  const content = useEditor((s) => s.content);
+  const addVariant = useEditor((s) => s.addVariant);
+  const removeVariant = useEditor((s) => s.removeVariant);
+  const setEditing = useEditor((s) => s.setEditing);
+  const [copyFrom, setCopyFrom] = useState<string>('');
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const [error, setError] = useState('');
+  const active = activeVariants(content, chosen);
+  const unused = (content.variants ?? []).filter((v) => !active.includes(v));
+  const label = (f: ContactField) => f.label.replace(/ \(.*\)$/, '');
+
+  type Row = { key: string; values: (string | number | boolean | null)[]; total?: number; eligible?: number };
+  const rows = new Map<string, Row>();
+  const add = (values: Row['values'], extra: Partial<Row> = {}) => {
+    const key = segmentKey(chosen, values);
+    if (!rows.has(key)) rows.set(key, { key, values, ...extra });
+  };
+  for (const s of segs?.segments ?? []) if (!s.values.every((v) => v === null || v === '')) add(s.values, { total: s.total, eligible: s.eligible });
+  for (const c of test) add(chosenFields.map((f) => c.data[f.key] ?? null));
+  for (const v of active) add(v.values);
+  const list = [...rows.values()];
+  const own = (key: string) => active.find((v) => v.key === key);
+  const contactsOnDefault = list.filter((r) => !own(r.key)).reduce((n, r) => n + (r.total ?? 0), 0);
+
+  function create(values: Row['values']) {
+    setError('');
+    const id = addVariant(chosen, values, copyFrom || null);
+    if (!id) setError('Could not add that version: it already exists, or the campaign has the most versions allowed.');
+    else onOpen();
+  }
+  function createTyped() {
+    const values: Row['values'] = [];
+    for (const f of chosenFields) {
+      const cell = parseCell(f, typed[f.key] ?? '');
+      if ('error' in cell) { setError(cell.error + '.'); return; }
+      values.push(cell.value);
+    }
+    setTyped({});
+    create(values);
+  }
+
+  return (
+    <div className="card wide" data-testid="segment-versions">
+      <h3 style={{ marginTop: 0 }}>One email per segment</h3>
+      <p className="muted small">Each segment can have its own version of the email, for example in Arabic for UAE-ar. A new version starts as a copy and is then independent of the Default version. Contacts in a segment without a version of its own get the Default version.</p>
+      {error && <p className="error" role="alert">{error}</p>}
+      {canEdit && (
+        <label>New versions start as a copy of
+          <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
+            <option value="">The Default version</option>
+            {active.map((v) => <option key={v.id} value={v.id}>The {variantCode(v)} version</option>)}
+          </select>
+        </label>
+      )}
+      <div className="table-scroll" style={{ marginTop: 10 }}>
+        <table>
+          <thead><tr><th>Segment</th><th>Contacts</th><th>Email</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><strong>Default</strong></td><td className="muted small">{contactsOnDefault > 0 ? `${contactsOnDefault} in segments without their own version` : 'everyone else'}</td><td>Default version</td><td><button type="button" className="link" onClick={() => { setEditing(null); onOpen(); }}>Edit</button></td></tr>
+            {list.map((r) => {
+              const v = own(r.key);
+              const code = v ? variantCode(v) : r.values.map((x) => (x === null || x === '' ? 'blank' : typeof x === 'boolean' ? (x ? 'yes' : 'no') : String(x))).join('-');
+              return (
+                <tr key={r.key}>
+                  <td><strong>{code}</strong></td>
+                  <td>{r.total !== undefined ? `${r.total} (${r.eligible} eligible)` : <span className="muted small">no contacts in your list</span>}</td>
+                  <td>{v ? <span className="ok">Own version</span> : <span className="muted">Uses the Default</span>}</td>
+                  <td>
+                    {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${code} version`} onClick={() => { setEditing(v.id); onOpen(); }}>{canEdit ? 'Edit' : 'View'}</button>}
+                    {v && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${code} version`} onClick={() => { if (window.confirm(`Delete the ${code} version of this email? Its contacts will get the Default version.`)) removeVariant(v.id); }}>Delete</button>}
+                    {!v && canEdit && <button type="button" className="link" aria-label={`Create a version for ${code}`} onClick={() => create(r.values)}>Create version</button>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {canEdit && (
+        <>
+          <p className="small" style={{ marginTop: 12 }}><strong>Another segment.</strong> Type one value for each field to write a version for a segment that is not in the list yet.</p>
+          <div className="map-grid">
+            {chosenFields.map((f) => (
+              <label key={f.key}>{label(f)}
+                <input aria-label={`Version value for ${label(f)}`} value={typed[f.key] ?? ''} onChange={(e) => setTyped({ ...typed, [f.key]: e.target.value })} />
+              </label>
+            ))}
+          </div>
+          <p><button type="button" disabled={chosenFields.some((f) => !(typed[f.key] ?? '').trim())} onClick={createTyped}>Create this version</button></p>
+        </>
+      )}
+      {unused.length > 0 && (
+        <details>
+          <summary>{unused.length} version{unused.length > 1 ? 's' : ''} made for other segment fields (not used now)</summary>
+          <p className="muted small">These were written when the campaign was segmented by different fields. They are kept, and used again if you choose the same fields. Contacts get the Default version meanwhile.</p>
+          <ul>{unused.map((v) => <li key={v.id}><strong>{variantCode(v)}</strong> <span className="muted small">({v.fields.join(', ')})</span> {canEdit && <button type="button" className="link danger" onClick={() => { if (window.confirm('Delete this version?')) removeVariant(v.id); }}>Delete</button>}</li>)}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function AudiencePane({ campaignId, canEdit, onOpenVersion }: { campaignId: string; canEdit: boolean; onOpenVersion: () => void }) {
   const { can } = useSession();
   const [info, setInfo] = useState<AudienceInfo | null>(null);
   const [segs, setSegs] = useState<SegmentsResponse | null>(null);
@@ -410,7 +536,9 @@ function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: bo
   const chosenFields = chosen.map((k) => info?.available.find((f) => f.key === k)).filter((f): f is ContactField => !!f);
 
   function changeFields(next: string[]) {
-    if (info && info.test.length && next.join() !== chosen.join() && !window.confirm('Changing the fields removes the test audience made for this campaign. Continue?')) return;
+    const hasVersions = activeVariants(useEditor.getState().content, chosen).length > 0;
+    const parts = [info && info.test.length ? 'removes the test audience made for this campaign' : '', hasVersions ? 'stops using the segment versions you wrote (they are kept, and used again if you choose the same fields)' : ''].filter(Boolean);
+    if (next.join() !== chosen.join() && parts.length && !window.confirm(`Changing the fields ${parts.join(' and ')}. Continue?`)) return;
     void guarded(async () => { await api('PUT', `/api/campaigns/${campaignId}/audience`, { fields: next }); });
   }
   const generate = (mode: 'sheet' | 'values') => guarded(async () => {
@@ -442,6 +570,8 @@ function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: bo
           </div>
         </>
       )}
+
+      {chosen.length > 0 && <SegmentVersionsCard chosen={chosen} chosenFields={chosenFields} segs={segs} test={info?.test ?? []} canEdit={canEdit} onOpen={onOpenVersion} />}
 
       {chosen.length > 0 && (
         <div className="card wide" data-testid="test-audience">
@@ -482,6 +612,7 @@ function AudiencePane({ campaignId, canEdit }: { campaignId: string; canEdit: bo
 function LivePane({ campaignId }: { campaignId: string }) {
   const saveState = useEditor((s) => s.saveState);
   const version = useEditor((s) => s.version);
+  const editing = useEditor((s) => s.editing);
   const [html, setHtml] = useState('');
   const [issues, setIssues] = useState(0);
   const [kind, setKind] = useState<'phone' | 'desktop'>('phone');
@@ -491,12 +622,12 @@ function LivePane({ campaignId }: { campaignId: string }) {
     let live = true;
     const timer = setTimeout(async () => {
       try {
-        const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview?as=sample`);
+        const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview?as=sample${editing ? `&variant=${editing}` : ''}`);
         if (live) { setHtml(r.html); setIssues(r.placeholderIssues.length); setError(''); }
       } catch (e) { if (live) setError(errorText(e)); }
     }, 600);
     return () => { live = false; clearTimeout(timer); };
-  }, [campaignId, saveState, version]);
+  }, [campaignId, saveState, version, editing]);
   return (
     <div className="live-pane" data-testid="live-preview">
       <div className="preview-bar">
@@ -584,6 +715,30 @@ function VersionsPane({ campaignId, canEdit, onRestored }: { campaignId: string;
   );
 }
 
+// ---------- Which version of the email is being edited ----------
+function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; canEdit: boolean }) {
+  const content = useEditor((s) => s.content);
+  const editing = useEditor((s) => s.editing);
+  const setEditing = useEditor((s) => s.setEditing);
+  const active = activeVariants(content, audienceFields);
+  if (active.length === 0) return null;
+  const current = active.find((v) => v.id === editing);
+  return (
+    <div className="version-bar" data-testid="version-bar">
+      <label>Editing version{' '}
+        <select value={current?.id ?? ''} onChange={(e) => setEditing(e.target.value || null)}>
+          <option value="">Default version</option>
+          {active.map((v) => <option key={v.id} value={v.id}>{variantCode(v)} version</option>)}
+        </select>
+      </label>
+      <span className="muted small">
+        {current ? `You are editing the ${variantCode(current)} version. Only contacts in that segment receive it.` : 'The Default version is sent to contacts in segments without a version of their own.'}
+        {current && !canEdit ? ' (view only)' : ''}
+      </span>
+    </div>
+  );
+}
+
 // ---------- Page ----------
 export function EditorPage() {
   const { id = '' } = useParams();
@@ -596,6 +751,7 @@ export function EditorPage() {
   const [loadError, setLoadError] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const [audienceFields, setAudienceFields] = useState<string[]>([]);
 
   const reload = useCallback(async () => {
     try {
@@ -604,6 +760,10 @@ export function EditorPage() {
     } catch (e) { setLoadError(errorText(e)); }
   }, [id]);
   useEffect(() => { void reload(); }, [reload]);
+  // the campaign's segment fields decide which segment versions are in use
+  useEffect(() => {
+    api<{ audience: { fields: string[] } }>('GET', `/api/campaigns/${id}/audience`).then((a) => setAudienceFields(a.audience.fields)).catch(() => undefined);
+  }, [id, tab]);
 
   // Autosave 1.2 s after the last change; retry after a failed save.
   useEffect(() => {
@@ -636,16 +796,16 @@ export function EditorPage() {
   const activeLabel = useMemo(() => {
     if (!dragging) return '';
     if (dragging.startsWith('lib:')) return lib.find((d) => d.type === dragging.slice(4))?.label ?? '';
-    const b = s.content.blocks.find((x) => x.id === dragging);
+    const b = versionOf(s.content, s.editing).blocks.find((x) => x.id === dragging);
     return b ? blockDefinition(b.type)?.label ?? '' : '';
-  }, [dragging, lib, s.content.blocks]);
+  }, [dragging, lib, s.content, s.editing]);
 
   function onDragEnd(e: DragEndEvent) {
     setDragging(null);
     const { active, over } = e;
     if (!over) return;
     const st = useEditor.getState();
-    const blocks = st.content.blocks;
+    const blocks = versionOf(st.content, st.editing).blocks;
     const overIndex = over.id === 'canvas-end' ? blocks.length : blocks.findIndex((b) => b.id === over.id);
     if (String(active.id).startsWith('lib:')) {
       const def = lib.find((d) => d.type === String(active.id).slice(4));
@@ -710,6 +870,7 @@ export function EditorPage() {
         </div>
       </div>
 
+      {tab === 'edit' && <VersionBar audienceFields={audienceFields} canEdit={canEdit} />}
       {tab === 'edit' && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e: DragStartEvent) => setDragging(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
           <div className={`editor-grid${live ? ' live' : ''}`}>
@@ -732,7 +893,7 @@ export function EditorPage() {
           <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>
         </DndContext>
       )}
-      {tab === 'audience' && <div className="tab-body"><AudiencePane campaignId={id} canEdit={canEdit && s.status === 'draft'} /></div>}
+      {tab === 'audience' && <div className="tab-body"><AudiencePane campaignId={id} canEdit={canEdit && s.status === 'draft'} onOpenVersion={() => setTab('edit')} /></div>}
       {tab === 'preview' && <div className="tab-body"><PreviewPane campaignId={id} /></div>}
       {tab === 'versions' && <div className="tab-body"><VersionsPane campaignId={id} canEdit={canEdit} onRestored={() => setTab('edit')} /></div>}
     </div>

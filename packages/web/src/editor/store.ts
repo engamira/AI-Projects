@@ -1,12 +1,16 @@
 import { create } from 'zustand';
 import {
+  MAX_VARIANTS,
   cloneBlock,
   createInstance,
+  newVariant,
   validateContent,
+  versionOf,
   type BlockDefinition,
   type CampaignDto,
   type EmailContent,
   type EmailSettings,
+  type EmailVersion,
   type PropValue,
   type SaveDraftResponse,
 } from '@cl/shared';
@@ -22,6 +26,8 @@ type EditorState = {
   status: string;
   name: string;
   content: EmailContent;
+  /** The version being edited: null = the Default, otherwise the id of a segment version. */
+  editing: string | null;
   version: number;
   past: EmailContent[];
   future: EmailContent[];
@@ -34,6 +40,13 @@ type EditorState = {
   load: (dto: CampaignDto) => void;
   setName: (name: string) => void;
   select: (id: string | null) => void;
+  /** Switch between the Default version and a segment's version. */
+  setEditing: (variantId: string | null) => void;
+  /** Creates a version for a segment as a copy of the Default (or of another version) and starts editing it. */
+  addVariant: (fields: string[], values: (string | number | boolean | null)[], copyFrom: string | null) => string | null;
+  removeVariant: (id: string) => void;
+  /** Copies one block into every other version (replacing the block with the same identity, or adding it at the same place). */
+  copyBlockToOthers: (id: string) => void;
   undo: () => void;
   redo: () => void;
   addBlock: (def: BlockDefinition, index?: number) => void;
@@ -46,6 +59,14 @@ type EditorState = {
   setSetting: <K extends keyof EmailSettings>(key: K, value: EmailSettings[K]) => void;
   save: () => Promise<void>;
 };
+
+/** Applies a change to the version being edited (the Default or one segment's version) and leaves the rest alone. */
+function change(content: EmailContent, editing: string | null, f: (d: EmailVersion) => EmailVersion): EmailContent {
+  if (editing && content.variants?.some((v) => v.id === editing)) {
+    return { ...content, variants: content.variants.map((v) => (v.id === editing ? { ...v, ...f(v) } : v)) };
+  }
+  return { ...content, ...f(content) };
+}
 
 const emptyDoc = (): EmailContent => ({
   schemaVersion: 1,
@@ -76,6 +97,7 @@ export const useEditor = create<EditorState>((set, get) => {
     status: 'draft',
     name: '',
     content: emptyDoc(),
+    editing: null,
     version: 0,
     past: [],
     future: [],
@@ -91,6 +113,7 @@ export const useEditor = create<EditorState>((set, get) => {
         status: dto.status,
         name: dto.name,
         content: dto.draft.content,
+        editing: null,
         version: dto.draft.version,
         past: [],
         future: [],
@@ -103,6 +126,45 @@ export const useEditor = create<EditorState>((set, get) => {
     setName: (name) => set({ name }),
     select: (id) => set({ selectedId: id }),
 
+    setEditing: (variantId) => set({ editing: variantId, selectedId: null }),
+
+    addVariant: (fields, values, copyFrom) => {
+      const { content } = get();
+      if ((content.variants?.length ?? 0) >= MAX_VARIANTS) return null;
+      const v = newVariant(versionOf(content, copyFrom), fields, values);
+      if (content.variants?.some((x) => x.key === v.key)) return null;
+      commit({ ...content, variants: [...(content.variants ?? []), v] });
+      set({ editing: v.id, selectedId: null });
+      return v.id;
+    },
+
+    removeVariant: (id) => {
+      const { content, editing } = get();
+      const rest = (content.variants ?? []).filter((v) => v.id !== id);
+      const next = { ...content } as EmailContent;
+      if (rest.length) next.variants = rest; else delete next.variants;
+      commit(next);
+      if (editing === id) set({ editing: null, selectedId: null });
+    },
+
+    copyBlockToOthers: (id) => {
+      const { content, editing } = get();
+      const src = versionOf(content, editing).blocks;
+      const at = src.findIndex((b) => b.id === id);
+      if (at < 0) return;
+      const block = src[at]!;
+      const into = (d: EmailVersion): EmailVersion => {
+        const copy = JSON.parse(JSON.stringify(block)) as typeof block;
+        const i = d.blocks.findIndex((b) => b.id === id);
+        const blocks = i >= 0 ? d.blocks.map((b, k) => (k === i ? copy : b)) : [...d.blocks.slice(0, at), copy, ...d.blocks.slice(at)];
+        return { ...d, blocks };
+      };
+      const next: EmailContent = { ...content };
+      if (editing !== null) Object.assign(next, into(content));
+      if (content.variants) next.variants = content.variants.map((v) => (v.id === editing ? v : { ...v, ...into(v) }));
+      commit(next);
+    },
+
     undo: () => {
       const s = get();
       const prev = s.past[s.past.length - 1];
@@ -113,62 +175,66 @@ export const useEditor = create<EditorState>((set, get) => {
         future: [s.content, ...s.future],
         saveState: 'dirty',
         lastKey: null,
-        selectedId: prev.blocks.some((b) => b.id === s.selectedId) ? s.selectedId : null,
+        editing: s.editing && prev.variants?.some((v) => v.id === s.editing) ? s.editing : null,
+        selectedId: versionOf(prev, s.editing).blocks.some((b) => b.id === s.selectedId) ? s.selectedId : null,
       });
     },
     redo: () => {
       const s = get();
       const next = s.future[0];
       if (!next) return;
-      set({ content: next, past: [...s.past, s.content], future: s.future.slice(1), saveState: 'dirty', lastKey: null });
+      set({ content: next, past: [...s.past, s.content], future: s.future.slice(1), saveState: 'dirty', lastKey: null, editing: s.editing && next.variants?.some((v) => v.id === s.editing) ? s.editing : null });
     },
 
     addBlock: (def, index) => {
-      const { content } = get();
+      const { content, editing } = get();
       const inst = createInstance(def);
-      const at = index === undefined ? content.blocks.length : Math.max(0, Math.min(index, content.blocks.length));
-      const blocks = [...content.blocks.slice(0, at), inst, ...content.blocks.slice(at)];
-      commit({ ...content, blocks });
+      const cur = versionOf(content, editing);
+      const at = index === undefined ? cur.blocks.length : Math.max(0, Math.min(index, cur.blocks.length));
+      commit(change(content, editing, (d) => ({ ...d, blocks: [...d.blocks.slice(0, at), inst, ...d.blocks.slice(at)] })));
       set({ selectedId: inst.id });
     },
 
     moveBlock: (from, to) => {
-      const { content } = get();
-      if (from === to || from < 0 || to < 0 || from >= content.blocks.length || to >= content.blocks.length) return;
-      const blocks = [...content.blocks];
-      const [b] = blocks.splice(from, 1);
-      blocks.splice(to, 0, b!);
-      commit({ ...content, blocks });
+      const { content, editing } = get();
+      const n = versionOf(content, editing).blocks.length;
+      if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+      commit(change(content, editing, (d) => {
+        const blocks = [...d.blocks];
+        const [b] = blocks.splice(from, 1);
+        blocks.splice(to, 0, b!);
+        return { ...d, blocks };
+      }));
     },
 
     duplicateBlock: (id) => {
-      const { content } = get();
-      const i = content.blocks.findIndex((b) => b.id === id);
+      const { content, editing } = get();
+      const i = versionOf(content, editing).blocks.findIndex((b) => b.id === id);
       if (i < 0) return;
-      const copy = cloneBlock(content.blocks[i]!);
-      commit({ ...content, blocks: [...content.blocks.slice(0, i + 1), copy, ...content.blocks.slice(i + 1)] });
+      const copy = cloneBlock(versionOf(content, editing).blocks[i]!);
+      commit(change(content, editing, (d) => ({ ...d, blocks: [...d.blocks.slice(0, i + 1), copy, ...d.blocks.slice(i + 1)] })));
       set({ selectedId: copy.id });
     },
 
     deleteBlock: (id) => {
-      const { content, selectedId } = get();
-      commit({ ...content, blocks: content.blocks.filter((b) => b.id !== id) });
+      const { content, editing, selectedId } = get();
+      commit(change(content, editing, (d) => ({ ...d, blocks: d.blocks.filter((b) => b.id !== id) })));
       if (selectedId === id) set({ selectedId: null });
     },
 
     setProp: (id, key, value) => {
-      const { content } = get();
-      commit({ ...content, blocks: content.blocks.map((b) => (b.id === id ? { ...b, props: { ...b.props, [key]: value } } : b)) }, `${id}:${key}`);
+      const { content, editing } = get();
+      commit(change(content, editing, (d) => ({ ...d, blocks: d.blocks.map((b) => (b.id === id ? { ...b, props: { ...b.props, [key]: value } } : b)) })), `${editing ?? ''}:${id}:${key}`);
     },
 
     setProps: (id, props) => {
-      const { content } = get();
-      commit({ ...content, blocks: content.blocks.map((b) => (b.id === id ? { ...b, props } : b)) });
+      const { content, editing } = get();
+      commit(change(content, editing, (d) => ({ ...d, blocks: d.blocks.map((b) => (b.id === id ? { ...b, props } : b)) })));
     },
 
     setSetting: (key, value) => {
-      const { content } = get();
-      commit({ ...content, settings: { ...content.settings, [key]: value } }, `settings:${key}`);
+      const { content, editing } = get();
+      commit(change(content, editing, (d) => ({ ...d, settings: { ...d.settings, [key]: value } })), `${editing ?? ''}:settings:${key}`);
     },
 
     save: () => {

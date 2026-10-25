@@ -364,7 +364,7 @@ export function htmlToPlainText(html: string): string {
     .trim() + '\n';
 }
 
-export type RenderedEmail = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[] };
+export type RenderedEmail = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[]; versionLabel?: string };
 
 /**
  * The one place that produces email HTML and its plain-text alternative: preview, QA and sending all use this output.
