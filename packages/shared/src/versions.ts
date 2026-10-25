@@ -1,5 +1,5 @@
 import type { BlockInstance, EmailContent, EmailVersion, SegmentVersion } from './content.js';
-import { evaluateCondition } from './conditions.js';
+import { evaluateCondition, isGroup, type ConditionGroup } from './conditions.js';
 import { segmentCode, type ContactFieldType } from './contacts.js';
 
 // Versions of an email for segments of the audience. The Default version is the email itself; a segment version is a
@@ -29,7 +29,7 @@ export function versionOf(content: EmailContent, variantId: string | null): Emai
 }
 
 /** Where a contact's email comes from. */
-export type VersionLayer = 'copy' | 'language' | 'default';
+export type VersionLayer = 'copy' | 'language' | 'default' | 'mapped';
 
 /** Blocks the contact sees: those with no condition, or whose condition the contact meets. */
 export function blocksShownFor(blocks: BlockInstance[], contact: Record<string, Value>, typeOf?: (field: string) => ContactFieldType | undefined): BlockInstance[] {
@@ -52,6 +52,13 @@ export function flatContent(content: EmailContent, variant: SegmentVersion | nul
  */
 export function pickVersion(content: EmailContent, audienceFields: string[], contact: Record<string, Value>): { variant: SegmentVersion | null; layer: VersionLayer } {
   const list = content.variants ?? [];
+  const routes = content.versioning?.routes;
+  if (routes && audienceFields.length) {
+    const target = routes[routeKeyFor(content, audienceFields, contact)];
+    if (target === 'default') return { variant: null, layer: 'mapped' };
+    const mapped = target ? list.find((v) => v.id === target) : undefined;
+    if (mapped) return { variant: mapped, layer: 'mapped' };
+  }
   if (!list.length || audienceFields.length === 0) return { variant: null, layer: 'default' };
   const key = segmentKey(audienceFields, audienceFields.map((k) => contact[k]));
   const copy = list.find((v) => !v.kind && v.key === key && v.fields.join(',') === audienceFields.join(','));
@@ -63,6 +70,78 @@ export function pickVersion(content: EmailContent, audienceFields: string[], con
     if (lang) return { variant: lang, layer: 'language' };
   }
   return { variant: null, layer: 'default' };
+}
+
+// ---------- Segments created by block conditions ----------
+// When a campaign is built "one email per language", the show/hide conditions split each language into more segments:
+// if blocks show only for Country UAE or SA, English contacts fall into UAE-en, SA-en and Default-en ("any other country").
+
+export type DerivedSegment = { fields: string[]; values: string[]; key: string; code: string; language: string };
+
+/** Values that rules compare with "is" or "is one of", per field (first spelling kept). */
+function mentionedValues(g: ConditionGroup, out: Map<string, string[]>): void {
+  for (const r of g.rules) {
+    if (isGroup(r)) { mentionedValues(r, out); continue; }
+    if (r.op !== 'is' && r.op !== 'is_one_of') continue;
+    const list = out.get(r.field) ?? [];
+    for (const raw of r.values) {
+      const v = raw.trim();
+      if (v && !list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v);
+    }
+    out.set(r.field, list);
+  }
+}
+
+/** The values the block conditions of one version look for, per field. */
+export function mentionedIn(version: EmailVersion, exclude: string[] = []): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const b of version.blocks) if (b.showWhen) mentionedValues(b.showWhen, out);
+  for (const k of exclude) out.delete(k);
+  for (const [k, v] of [...out]) if (v.length === 0) out.delete(k);
+  return out;
+}
+
+const MAX_DERIVED = 2000;
+
+/**
+ * Segments made by the block conditions of a language default: one for every combination of the values its conditions
+ * mention ('' = any other value, shown as "Default"), for each language.
+ */
+export function derivedSegments(content: EmailContent, audienceFields: string[], languages: string[]): { rows: DerivedSegment[]; tooMany: boolean } {
+  const lf = content.versioning?.languageField;
+  const rows: DerivedSegment[] = [];
+  if (content.versioning?.mode !== 'conditions' || !lf || !audienceFields.includes(lf)) return { rows, tooMany: false };
+  for (const language of languages) {
+    const lkey = segmentKey([lf], [language]);
+    const v = (content.variants ?? []).find((x) => x.kind === 'language' && x.key === lkey && x.fields.join(',') === lf);
+    const mentioned = v ? mentionedIn(v, [lf]) : new Map<string, string[]>();
+    const fields = [...mentioned.keys()];
+    const lists = fields.map((f) => [...mentioned.get(f)!, '']);
+    const combos = lists.reduce<string[][]>((acc, l) => acc.flatMap((a) => l.map((x) => [...a, x])), [[]]);
+    for (const c of combos) {
+      const values = [...c, language];
+      rows.push({ fields: [...fields, lf], values, key: segmentKey([...fields, lf], values), code: values.map((x) => x || 'Default').join('-'), language });
+      if (rows.length >= MAX_DERIVED) return { rows, tooMany: true };
+    }
+  }
+  return { rows, tooMany: false };
+}
+
+/** Which segment (for sending one segment the email of another) a contact falls into. */
+export function routeKeyFor(content: EmailContent, audienceFields: string[], contact: Record<string, Value>): string {
+  const lf = content.versioning?.languageField;
+  if (content.versioning?.mode === 'conditions' && lf && audienceFields.includes(lf)) {
+    const lkey = segmentKey([lf], [contact[lf]]);
+    const v = (content.variants ?? []).find((x) => x.kind === 'language' && x.key === lkey && x.fields.join(',') === lf);
+    const mentioned = v ? mentionedIn(v, [lf]) : new Map<string, string[]>();
+    const fields = [...mentioned.keys()];
+    const values = fields.map((f) => {
+      const have = segmentPart(contact[f]).toLowerCase();
+      return mentioned.get(f)!.find((x) => x.toLowerCase() === have) ?? '';
+    });
+    return segmentKey([...fields, lf], [...values, contact[lf]]);
+  }
+  return segmentKey(audienceFields, audienceFields.map((k) => contact[k]));
 }
 
 /** The version that a contact with these values receives, or null for the Default. */

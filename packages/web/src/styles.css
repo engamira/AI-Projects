@@ -358,3 +358,23 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .lang-setting select { width: auto; }
 .step-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; background: var(--accent-soft, #eef4ff); border-radius: 8px; }
 .step-line button { margin-left: auto; }
+
+/* Segments tab: each panel is framed and tinted so the sections are easy to tell apart */
+.seg-panel {
+  --tint: #4f7cff;
+  background: color-mix(in srgb, var(--tint) 9%, var(--surface));
+  border: 2px solid color-mix(in srgb, var(--tint) 40%, var(--border));
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin: 0 0 18px;
+}
+.seg-panel > h2 { margin-top: 0; }
+.seg-panel.tint-choice { --tint: #7a5af8; }
+.seg-panel.tint-who { --tint: #1f9d6b; }
+.seg-panel.tint-test { --tint: #d99a00; }
+.seg-panel.tint-map { --tint: #d63a41; }
+.seg-panel .build-mode { background: var(--surface); }
+.seg-panel .table-scroll { background: var(--surface); border-radius: 8px; }
+.seg-next { display: flex; justify-content: flex-end; margin: 4px 0 24px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 640px) { .seg-panel { padding: 14px; } }

@@ -51,6 +51,8 @@ type EditorState = {
   addLanguageVersion: (languageField: string, value: string, copyFrom: string | null) => string | null;
   /** How this campaign builds versions, and which field holds the language. */
   setVersioning: (v: Versioning) => void;
+  /** Sends a segment the email of a version (or the Default), or back to the automatic choice (null). */
+  setRoute: (segmentKey: string, target: string | null) => void;
   /** Shows a block only to contacts who meet the condition (null = everyone). */
   setShowWhen: (blockId: string, condition: ConditionGroup | null) => void;
   /** Copies one block into every other version (replacing the block with the same identity, or adding it at the same place). */
@@ -161,6 +163,15 @@ export const useEditor = create<EditorState>((set, get) => {
       commit({ ...content, versioning: v });
     },
 
+    setRoute: (key, target) => {
+      const { content } = get();
+      const routes = { ...(content.versioning?.routes ?? {}) };
+      if (target) routes[key] = target; else delete routes[key];
+      const base = content.versioning ?? { mode: 'copies' as const };
+      const { routes: _old, ...rest } = base;
+      commit({ ...content, versioning: Object.keys(routes).length ? { ...rest, routes } : rest });
+    },
+
     setShowWhen: (blockId, condition) => {
       const { content, editing } = get();
       commit(change(content, editing, (d) => ({
@@ -178,6 +189,11 @@ export const useEditor = create<EditorState>((set, get) => {
       const rest = (content.variants ?? []).filter((v) => v.id !== id);
       const next = { ...content } as EmailContent;
       if (rest.length) next.variants = rest; else delete next.variants;
+      if (next.versioning?.routes) {
+        const routes = Object.fromEntries(Object.entries(next.versioning.routes).filter(([, target]) => target !== id));
+        const { routes: _r, ...others } = next.versioning;
+        next.versioning = Object.keys(routes).length ? { ...others, routes } : others;
+      }
       commit(next);
       if (editing === id) set({ editing: null, selectedId: null });
     },

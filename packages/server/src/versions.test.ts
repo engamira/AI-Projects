@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
-  activeLanguageVersions, blocksShownFor, describeCondition, evaluateCondition, pickVersion, validateCondition, type Comparison, type ConditionGroup,
+  activeLanguageVersions, blocksShownFor, derivedSegments, routeKeyFor, describeCondition, evaluateCondition, pickVersion, validateCondition, type Comparison, type ConditionGroup,
   blockDefinition, cloneContent, createInstance, emptyContent, flatContent, newVariant, pickVariant, segmentKey, validateContent, versionOf,
   type EmailContent, type TestContactDto,
 } from '@cl/shared';
@@ -368,5 +368,74 @@ describe('previews with languages and conditions', () => {
     const mode = JSON.parse(JSON.stringify(c)) as EmailContent;
     mode.versioning = { mode: 'copies' };
     expect((await admin.put(`/api/campaigns/${id}/draft`, { content: mode, baseVersion: v })).status).toBe(403);
+  });
+});
+
+describe('segments made by block conditions, and sending one segment the email of another', () => {
+  const when = (field: string, ...values: string[]): ConditionGroup => ({ match: 'all', rules: [{ field, op: values.length > 1 ? 'is_one_of' : 'is', values }] });
+  function campaign() {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    const en = newVariant(c, ['language'], ['en'], 'language');
+    en.blocks = [textBlock('For all'), textBlock('UAE only'), textBlock('SA only')];
+    en.blocks[1]!.showWhen = when('country', 'UAE');
+    en.blocks[2]!.showWhen = when('country', 'SA');
+    const ar = newVariant(c, ['language'], ['ar'], 'language');
+    c.variants = [en, ar];
+    return { c, en, ar };
+  }
+
+  it('lists a segment for each value the conditions mention plus "Default" for any other value', () => {
+    const { c } = campaign();
+    const d = derivedSegments(c, ['language'], ['en', 'ar']);
+    expect(d.rows.map((r) => r.code)).toEqual(['UAE-en', 'SA-en', 'Default-en', 'ar']);
+    expect(d.tooMany).toBe(false);
+    expect(derivedSegments({ ...c, versioning: { mode: 'copies' } }, ['language'], ['en']).rows).toEqual([]);
+  });
+
+  it('a segment can be sent the email of another segment, or the Default; the rest stay automatic', () => {
+    const { c, en, ar } = campaign();
+    const sa = { country: 'SA', language: 'en' };
+    expect(pickVersion(c, ['language'], sa)).toMatchObject({ layer: 'language', variant: { id: en.id } });
+    const key = routeKeyFor(c, ['language'], sa);
+    c.versioning = { ...c.versioning!, routes: { [key]: ar.id } };
+    expect(pickVersion(c, ['language'], sa)).toMatchObject({ layer: 'mapped', variant: { id: ar.id } });
+    expect(pickVersion(c, ['language'], { country: 'UAE', language: 'en' }).layer).toBe('language'); // other segments unchanged
+    c.versioning = { ...c.versioning!, routes: { [key]: 'default' } };
+    expect(pickVersion(c, ['language'], sa)).toMatchObject({ layer: 'mapped', variant: null });
+    c.versioning = { ...c.versioning!, routes: { [key]: 'not-a-version' } };
+    expect(pickVersion(c, ['language'], sa).layer).toBe('language'); // a stale route is ignored
+    expect(validateContent(c).ok).toBe(true);
+  });
+
+  it('routes are saved, shown in the preview, and only a Builder can change them', async () => {
+    await t.db.query('DELETE FROM contact');
+    const id = (await builder.post('/api/campaigns', { name: 'Routes', palette: 'travel' })).body.id;
+    await builder.put(`/api/campaigns/${id}/audience`, { fields: ['language'] });
+    const made = await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['UAE', 'en'], ['SA', 'en'], ['', 'en']] } });
+    expect(made.status).toBe(201);
+    expect((made.body.contacts as TestContactDto[]).map((x) => x.code)).toEqual(['Default-en', 'SA-en', 'UAE-en']);
+    const tests = made.body.contacts as TestContactDto[];
+    expect(tests.find((x) => x.code === 'Default-en')!.data.country).toBeNull();
+
+    const { c, en } = campaign();
+    const sa = tests.find((x) => x.code === 'SA-en')!;
+    c.versioning = { ...c.versioning!, routes: { [routeKeyFor(c, ['language'], sa.data)]: 'default' } };
+    expect((await builder.put(`/api/campaigns/${id}/draft`, { content: c, baseVersion: 1 })).status).toBe(200);
+    const asSa = (await builder.get(`/api/campaigns/${id}/preview?as=test:${sa.id}`)).body;
+    expect(asSa.versionLabel).toBe('Default version');
+    const asUae = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'UAE-en')!.id}`)).body;
+    expect(asUae.versionLabel).toBe('en default · 2 of 3 blocks');
+    expect(asUae.html).toContain('UAE only');
+    expect(asUae.html).not.toContain('SA only');
+    expect(en.blocks.length).toBe(3);
+
+    const v = (await builder.get(`/api/campaigns/${id}`)).body.draft.version;
+    const tamper = JSON.parse(JSON.stringify(c)) as EmailContent;
+    delete tamper.versioning!.routes;
+    expect((await admin.put(`/api/campaigns/${id}/draft`, { content: tamper, baseVersion: v })).status).toBe(403);
+    expect((await qa.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['EG', 'en']] } })).status).toBe(403);
+    expect((await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['email', 'language'], rows: [['a', 'en']] } })).status).toBe(400);
+    expect((await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['EG']] } })).status).toBe(400);
   });
 });

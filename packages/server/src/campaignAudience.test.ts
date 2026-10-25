@@ -113,17 +113,17 @@ describe('the generated test audience', () => {
     expect(codes(sheet.body.contacts)).toEqual(['EG-ar', 'UAE-ar', 'UAE-en']);
   });
 
-  it('values of the chosen fields are needed, bad values are explained, and the total can never pass 60', async () => {
+  it('values of the chosen fields are needed, bad values are explained, and the total can never pass 2000', async () => {
     expect((await generate({ mode: 'sheet' })).status).toBe(400); // no fields chosen yet
     await setFields(['country', 'language']);
     const missing = await generate({ mode: 'values', values: { country: ['UAE'] } });
     expect(missing.status).toBe(400);
     expect(missing.body.message).toContain('at least one value for Language');
-    const many = Array.from({ length: 8 }, (_, i) => `V${i}`);
+    const many = Array.from({ length: 13 }, (_, i) => `V${i}`);
     await setFields(['country', 'language', 'city']);
     const big = await generate({ mode: 'values', values: { country: many, language: many, city: many } });
     expect(big.status).toBe(400);
-    expect(big.body.message).toContain('60');
+    expect(big.body.message).toContain('2000');
     expect(await testList()).toHaveLength(0); // nothing half-made
     await setFields(['orders']);
     const bad = await generate({ mode: 'values', values: { orders: ['lots'] } });

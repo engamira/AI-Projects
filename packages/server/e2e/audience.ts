@@ -117,12 +117,19 @@ try {
   assert(await page.getByRole('button', { name: 'Add a contact' }).isEnabled(), 'adding is possible again after the limit is raised');
   ok('an Admin can raise the limit; the counter and Add button follow');
 
-  // ---- a campaign chooses its segment fields, builds a test audience step by step, and previews as a segment
+  // ---- a campaign opens on Segments; the build choice comes first and decides what follows
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('Segment test campaign');
   await page.getByRole('button', { name: 'Create and open' }).click();
-  await page.getByTestId('audience-step').waitFor(); // a new campaign opens on its Audience: segments first
-  ok('a new campaign opens on its Audience (step 1), before the email');
+  await page.getByRole('heading', { name: 'How will you build the versions?' }).waitFor(); // a new campaign opens on Segments: who it is for comes first
+  const tabNames = await page.getByRole('tab').allInnerTexts();
+  assert(tabNames.slice(0, 2).join('|') === 'Segments|Email', `the tabs start with Segments, then Email (got ${tabNames.join('|')})`);
+  assert((await page.getByText(/Step 1|Step 2/).count()) === 0, 'no step wording');
+  assert((await page.locator('#campaign-seg-0').count()) === 0, 'nothing else shows until the build choice is made');
+  ok('a new campaign opens on Segments (before Email) and shows only the build choice until one is chosen');
+
+  // ---- choice 2: a separate copy per segment, with up to 10 fields
+  await page.getByRole('radio', { name: /A separate copy for each segment/ }).check();
   await page.locator('#campaign-seg-0').selectOption({ label: 'Country' });
   await page.locator('#campaign-seg-1').selectOption({ label: 'Language' });
   await page.locator('td strong', { hasText: 'UAE-en' }).first().waitFor(); // named from the values in the order chosen
@@ -134,13 +141,13 @@ try {
   await page.locator('#campaign-seg-2').locator('option', { hasText: 'Interest (my field)' }).waitFor({ state: 'attached' });
 
   const tests = page.getByTestId('test-audience');
-  await tests.getByLabel(/^Country/).fill('UAE');
-  await tests.getByLabel(/^Language/).fill('en, ar');
-  await page.getByRole('button', { name: 'Add these combinations' }).click();
+  await tests.getByLabel('Values for Country').fill('UAE');
+  await tests.getByLabel('Values for Language').fill('en, ar');
+  await page.getByRole('button', { name: 'Build test audience' }).click();
   await tests.locator('td strong', { hasText: 'UAE-ar' }).waitFor();
-  await tests.getByLabel(/^Country/).fill('FR');
-  await tests.getByLabel(/^Language/).fill('fr');
-  await page.getByRole('button', { name: 'Add these combinations' }).click();
+  await tests.getByLabel('Values for Country').fill('FR');
+  await tests.getByLabel('Values for Language').fill('fr');
+  await page.getByRole('button', { name: 'Build test audience' }).click();
   await tests.locator('td strong', { hasText: 'FR-fr' }).waitFor();
   const made = (await tests.locator('tbody td strong').allInnerTexts()).sort();
   assert(made.join(',') === 'FR-fr,UAE-ar,UAE-en', `adding FR-fr kept UAE-en and UAE-ar and added no other combination (got ${made.join(',')})`);
@@ -154,14 +161,14 @@ try {
   const value = await who.locator('optgroup[label^="Test audience"] option', { hasText: 'UAE-en' }).first().getAttribute('value');
   await who.selectOption(value!);
   await page.getByTestId('previewing-as').getByText('UAE-en (test contact)').waitFor();
-  ok('a campaign chooses its segment fields, adds its own field, builds a test audience step by step, and previews as UAE-en');
+  ok('choice 2: a campaign chooses its segment fields, adds its own field, builds a test audience step by step, and previews as UAE-en');
 
   // ---- one email per segment: a Default version plus an independent copy for UAE-ar
-  await page.getByRole('tab', { name: 'Edit' }).click();
+  await page.getByRole('tab', { name: 'Email' }).click();
   await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
   await page.getByLabel('Heading', { exact: true }).fill('Default heading');
-  await page.getByRole('tab', { name: 'Audience' }).click();
-  await page.getByRole('button', { name: 'Create a version for UAE-ar' }).click(); // opens the Edit tab on the new version
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  await page.getByRole('button', { name: 'Create a version for UAE-ar' }).click(); // opens the Email tab on the new version
   const bar = page.getByTestId('version-bar');
   await bar.getByText('You are editing the UAE-ar version').waitFor();
   await page.locator('[data-block-type="text"]').last().click();
@@ -182,31 +189,75 @@ try {
   await page.getByTestId('shown-version').getByText('Default version').waitFor();
   ok('a segment gets its own independent version; contacts of other segments get the Default');
 
-  // ---- one default email per language, with show/hide conditions on blocks
-  await page.getByRole('tab', { name: 'Audience' }).click();
-  await page.getByRole('button', { name: 'Create the default for ar' }).click(); // the languages come from the campaign's segments
+  // ---- "Which email each segment receives": send UAE-en the UAE-ar version too
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  await page.getByLabel('Email for UAE-en').selectOption({ label: 'UAE-ar version' });
+  await page.getByText('set by you').first().waitFor();
+  await page.getByText('All changes saved').waitFor();
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  await page.getByLabel('Preview as').selectOption(enId!);
+  await page.getByTestId('shown-version').getByText('UAE-ar version').waitFor();
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  await page.getByLabel('Email for UAE-en').selectOption({ index: 0 }); // back to the automatic choice
+  await page.getByText('All changes saved').waitFor();
+  assert((await page.getByText('set by you').count()) === 0, 'the automatic choice has no "set by you" note');
+  ok('a segment can be sent the email of another segment, and put back to the automatic choice');
+
+  // ---- choice 1: one email per language, with show/hide conditions that add segments
+  await page.goto(`${BASE}/`);
+  await page.getByLabel('Campaign name').fill('Language campaign');
+  await page.getByRole('button', { name: 'Create and open' }).click();
+  await page.getByRole('radio', { name: /One email per language/ }).click();
+  await page.locator('#campaign-seg-0').waitFor();
+  await page.locator('#campaign-seg-0 option:checked', { hasText: 'Language' }).waitFor({ state: 'attached' }); // Language is selected as the one segment field
+  assert((await page.locator('#campaign-seg-1').count()) === 0, 'only one segment field can be chosen');
+  const tests2 = page.getByTestId('test-audience');
+  await tests2.getByLabel('Languages', { exact: true }).fill('en, ar');
+  await page.getByRole('button', { name: 'Build test audience' }).click();
+  await tests2.getByRole('cell', { name: 'ar', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Create the default for ar' }).click(); // the languages come from the test audience
   await page.getByTestId('version-bar').getByText('You are editing the ar default').waitFor();
   await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
   await page.getByLabel('Heading', { exact: true }).fill('UAE only');
   await page.getByLabel('Who sees this block').selectOption('some');
-  await page.getByTestId('show-when').getByLabel('Value').fill('UAE'); // Country is UAE (the first segment field)
+  await page.getByTestId('show-when').getByLabel('Value').fill('UAE'); // Country is UAE (any contact field can be used)
   await page.getByTestId('cond-badge').getByText('Only when Country is UAE').waitFor();
+  await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
+  await page.getByLabel('Heading', { exact: true }).fill('SA only');
+  await page.getByLabel('Who sees this block').selectOption('some');
+  await page.getByTestId('show-when').getByLabel('Value').fill('SA');
   await page.getByText('All changes saved').waitFor();
-  await page.getByRole('tab', { name: 'Audience' }).click();
-  await tests.getByLabel(/^Country/).fill('EG');
-  await tests.getByLabel(/^Language/).fill('ar');
-  await page.getByRole('button', { name: 'Add these combinations' }).click();
-  await tests.locator('td strong', { hasText: 'EG-ar' }).waitFor();
-  const segs = page.getByTestId('segment-versions');
-  await segs.getByText(/ar default · \d+ of \d+ blocks/).first().waitFor(); // EG-ar uses the Arabic default and does not see the UAE-only block
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  for (const code of ['UAE-ar', 'SA-ar', 'Default-ar']) await page.getByRole('cell', { name: new RegExp(`^${code}`) }).first().waitFor();
+  await tests2.getByRole('cell', { name: 'Default-ar', exact: true }).waitFor({ timeout: 30000 }); // test contacts for the new segments are made for you
+  ok('block conditions add segments (UAE-ar, SA-ar, Default-ar) to the Segments tab and their test contacts are built');
+
   await page.getByRole('tab', { name: 'Preview' }).click();
-  const egId = await page.getByLabel('Preview as').locator('optgroup[label^="Test audience"] option', { hasText: 'EG-ar' }).first().getAttribute('value');
-  await page.getByLabel('Preview as').selectOption(egId!);
-  await page.getByTestId('shown-version').getByText(/ar default/).waitFor();
-  const label = await page.getByTestId('shown-version').innerText();
-  const m = /ar default · (\d+) of (\d+) blocks/.exec(label);
-  assert(!!m && Number(m[1]) === Number(m[2]) - 1, `a contact outside the UAE sees one block less (got "${label}")`);
-  ok('a language default holds every block and a condition hides one from segments that do not meet it');
+  const shownFor = async (code: string): Promise<{ shown: number; total: number }> => {
+    const id = await page.getByLabel('Preview as').locator('optgroup[label^="Test audience"] option', { hasText: code }).first().getAttribute('value');
+    await page.getByLabel('Preview as').selectOption(id!);
+    await page.getByTestId('previewing-as').getByText(`${code} (test contact)`).waitFor();
+    await page.getByTestId('shown-version').getByText(/ar default/).waitFor();
+    const m = /ar default · (\d+) of (\d+) blocks/.exec(await page.getByTestId('shown-version').innerText());
+    assert(!!m, `the version label shows block counts for ${code}`);
+    return { shown: Number(m![1]), total: Number(m![2]) };
+  };
+  const uae = await shownFor('UAE-ar');
+  const def = await shownFor('Default-ar');
+  assert(uae.total === def.total && uae.shown === uae.total - 1 && def.shown === def.total - 2, `UAE sees one conditional block, any other country none (got ${uae.shown}/${uae.total} and ${def.shown}/${def.total})`);
+  ok('Preview as lists the new segments and hides blocks whose condition they do not meet');
+
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  await page.getByLabel('Email for SA-ar').selectOption({ label: 'Default email' });
+  await page.getByText('All changes saved').waitFor();
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  const saId = await page.getByLabel('Preview as').locator('optgroup[label^="Test audience"] option', { hasText: 'SA-ar' }).first().getAttribute('value');
+  await page.getByLabel('Preview as').selectOption(saId!);
+  await page.getByTestId('shown-version').getByText('Default version').waitFor();
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  await page.getByTestId('segments-next').click();
+  await page.getByTestId('version-bar').waitFor(); // Next goes to the Email tab
+  ok('a conditional segment can be sent the Default email instead; Next opens the Email tab');
 
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');

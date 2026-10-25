@@ -60,9 +60,10 @@ import {
 import { api, errorText } from '../api';
 import { useSession } from '../session';
 import { BlockView } from './BlockView';
-import { SegmentFieldPicker } from '../components/SegmentFieldPicker';
 import { ConditionBuilder } from '../components/ConditionBuilder';
 import { FieldForm } from './Fields';
+import { SegmentsPane, modeOf } from './SegmentsPane';
+import { useDerivedTestContacts } from './derivedSync';
 import { flushSave, useEditor } from './store';
 import { useBrand } from './useBrand';
 
@@ -80,7 +81,8 @@ function useLibrary(): BlockDefinition[] {
 }
 
 /** The campaign's segment fields (the only fields a "show when" condition can use). */
-const AudienceCtx = createContext<{ segmentFields: ContactField[] }>({ segmentFields: [] });
+/** segmentFields: the campaign's segment fields. conditionFields: the fields a block condition may use (any field when building one email per language, else the segment fields). */
+const AudienceCtx = createContext<{ segmentFields: ContactField[]; conditionFields: ContactField[]; perLanguage: boolean }>({ segmentFields: [], conditionFields: [], perLanguage: false });
 const plainLabel = (label: string): string => label.replace(/ \(.*\)$/, '');
 
 /** The words and blocks being edited: the Default version, or the segment version chosen in the bar above the canvas. */
@@ -116,7 +118,7 @@ function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: 
   const doc = useDoc();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, disabled: !canEdit });
   const def = blockDefinition(block.type);
-  const { segmentFields } = useContext(AudienceCtx);
+  const { conditionFields } = useContext(AudienceCtx);
   const selected = selectedId === block.id;
   return (
     <div
@@ -130,7 +132,7 @@ function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: 
         <span className="block-label">{def?.label ?? block.type}</span>
         {block.showWhen && (
           <span className="cond-badge" data-testid="cond-badge" title="This block is shown only to contacts who meet this condition">
-            Only when {describeCondition(block.showWhen, (k) => plainLabel(segmentFields.find((f) => f.key === k)?.label ?? k), (k) => segmentFields.find((f) => f.key === k)?.type)}
+            Only when {describeCondition(block.showWhen, (k) => plainLabel(conditionFields.find((f) => f.key === k)?.label ?? k), (k) => conditionFields.find((f) => f.key === k)?.type)}
           </span>
         )}
         {canEdit && (
@@ -228,25 +230,28 @@ function usedFields(g: ConditionGroup, out = new Set<string>()): Set<string> {
   return out;
 }
 
-/** "Who sees this block": everyone, or only contacts who meet conditions about this campaign's segment fields. */
+/** "Who sees this block": everyone, or only contacts who meet conditions. */
 function ShowWhenPanel({ block, canEdit }: { block: BlockInstance; canEdit: boolean }) {
-  const { segmentFields } = useContext(AudienceCtx);
+  const { conditionFields, perLanguage } = useContext(AudienceCtx);
   const setShowWhen = useEditor((s) => s.setShowWhen);
-  if (segmentFields.length === 0) {
-    return <div className="show-when"><h3>Who sees this block</h3><p className="muted small">Everyone. To show a block only to some segments, first choose this campaign's segment fields in the Audience tab.</p></div>;
+  if (conditionFields.length === 0) {
+    return <div className="show-when"><h3>Who sees this block</h3><p className="muted small">Everyone. To show a block only to some segments, first choose this campaign's segment fields in the Segments tab.</p></div>;
   }
-  const stale = block.showWhen ? [...usedFields(block.showWhen)].filter((k) => !segmentFields.some((f) => f.key === k)) : [];
+  const stale = block.showWhen ? [...usedFields(block.showWhen)].filter((k) => !conditionFields.some((f) => f.key === k)) : [];
+  const first = (conditionFields.find((f) => perLanguage && f.key === 'country') ?? conditionFields[0]!).key;
   return (
     <div className="show-when" data-testid="show-when">
       <h3>Who sees this block</h3>
       <select aria-label="Who sees this block" disabled={!canEdit} value={block.showWhen ? 'some' : 'all'}
-        onChange={(e) => setShowWhen(block.id, e.target.value === 'some' ? emptyGroup(segmentFields[0]!.key) : null)}>
+        onChange={(e) => setShowWhen(block.id, e.target.value === 'some' ? emptyGroup(first) : null)}>
         <option value="all">Everyone</option>
         <option value="some">Only contacts who meet conditions</option>
       </select>
-      {block.showWhen && <ConditionBuilder value={block.showWhen} fields={segmentFields} disabled={!canEdit} onChange={(g) => setShowWhen(block.id, g)} />}
-      {stale.length > 0 && <p className="error" role="alert">This condition uses {stale.join(', ')}, which is no longer one of the campaign's segment fields. Choose the field again or remove the rule.</p>}
-      <p className="muted small">Conditions can use this campaign's segment fields: {segmentFields.map((f) => plainLabel(f.label)).join(', ')}. Contacts who do not meet them get the email without this block.</p>
+      {block.showWhen && <ConditionBuilder value={block.showWhen} fields={conditionFields} disabled={!canEdit} onChange={(g) => setShowWhen(block.id, g)} />}
+      {stale.length > 0 && <p className="error" role="alert">This condition uses {stale.join(', ')}, which cannot be used here (any more). Choose the field again or remove the rule.</p>}
+      {perLanguage
+        ? <p className="muted small">Conditions can use any contact field. The values you compare with "is" or "is one of" become segments (for example UAE-en and SA-en), listed in the Segments tab. Contacts who do not meet a condition get the email without this block.</p>
+        : <p className="muted small">Conditions can use this campaign's segment fields: {conditionFields.map((f) => plainLabel(f.label)).join(', ')}. Contacts who do not meet them get the email without this block.</p>}
     </div>
   );
 }
@@ -427,351 +432,6 @@ function PreviewPane({ campaignId, revision, onClose }: { campaignId: string; re
   );
 }
 
-// ---------- Audience set-up for this campaign ----------
-type AudienceInfo = { audience: { fields: string[] }; available: ContactField[]; test: TestContactDto[] };
-
-/** Add a field of your own (for example "Interest") while setting up a campaign; it is then available to every campaign. */
-function AddFieldInline({ onAdded }: { onAdded: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState('');
-  const [type, setType] = useState('text');
-  const [error, setError] = useState('');
-  async function add(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    try { await api('POST', '/api/contact-fields', { label, type }); setLabel(''); setOpen(false); onAdded(); } catch (err) { setError(errorText(err)); }
-  }
-  if (!open) return <p><button type="button" className="link" onClick={() => setOpen(true)}>＋ Add a field of my own</button></p>;
-  return (
-    <form className="inline-form" onSubmit={(e) => void add(e)} aria-label="Add a field of my own">
-      <div><label htmlFor="inline-field-name">New field name</label><input id="inline-field-name" maxLength={40} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Interest" /></div>
-      <div><label htmlFor="inline-field-type">Kind of values</label>
-        <select id="inline-field-type" value={type} onChange={(e) => setType(e.target.value)}><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="boolean">Yes / no</option></select></div>
-      <div className="inline-form-actions"><button className="primary" disabled={!label.trim()}>Add field</button><button type="button" onClick={() => setOpen(false)}>Cancel</button></div>
-      {error && <p className="error" role="alert" style={{ flexBasis: '100%' }}>{error}</p>}
-    </form>
-  );
-}
-
-/** How this campaign's versions are built, the language defaults, and which email each segment receives. */
-function VersioningCard({ chosen, chosenFields, segs, test, canEdit, onOpen }: {
-  chosen: string[]; chosenFields: ContactField[]; segs: SegmentsResponse | null; test: TestContactDto[]; canEdit: boolean; onOpen: () => void;
-}) {
-  const content = useEditor((s) => s.content);
-  const addVariant = useEditor((s) => s.addVariant);
-  const addLanguageVersion = useEditor((s) => s.addLanguageVersion);
-  const removeVariant = useEditor((s) => s.removeVariant);
-  const setVersioning = useEditor((s) => s.setVersioning);
-  const setEditing = useEditor((s) => s.setEditing);
-  const [copyFrom, setCopyFrom] = useState<string>('');
-  const [typed, setTyped] = useState<Record<string, string>>({});
-  const [typedLanguage, setTypedLanguage] = useState('');
-  const [error, setError] = useState('');
-  const typeOf = (k: string) => chosenFields.find((f) => f.key === k)?.type;
-  const label = (f: ContactField) => plainLabel(f.label);
-
-  // the language field defaults to Language when it is one of the segment fields
-  const saved = content.versioning;
-  const languageField = saved?.languageField && chosen.includes(saved.languageField) ? saved.languageField : saved?.languageField === undefined && chosen.includes('language') ? 'language' : undefined;
-  const mode = saved?.mode ?? (languageField ? 'conditions' : 'copies');
-  const useLanguages = mode === 'conditions' && !!languageField;
-  const languageFieldLabel = chosenFields.find((f) => f.key === languageField)?.label;
-  const setMode = (m: 'conditions' | 'copies') => setVersioning({ mode: m, ...(languageField ? { languageField } : {}) });
-  const setLanguageField = (k: string) => setVersioning({ mode, ...(k ? { languageField: k } : {}) });
-
-  const copies = activeVariants(content, chosen);
-  const languages = activeLanguageVersions({ ...content, versioning: { mode: 'conditions', ...(languageField ? { languageField } : {}) } }, chosen);
-  const unused = (content.variants ?? []).filter((v) => !copies.includes(v) && !languages.includes(v));
-
-  // languages found in the segments (contact list and test audience), plus languages that already have a default
-  const found = new Map<string, { value: string; contacts: number }>();
-  if (languageField) {
-    const at = chosen.indexOf(languageField);
-    const note = (raw: unknown, n: number) => {
-      const v = raw === null || raw === undefined ? '' : String(raw).trim();
-      if (!v) return;
-      const k = v.toLowerCase();
-      found.set(k, { value: found.get(k)?.value ?? v, contacts: (found.get(k)?.contacts ?? 0) + n });
-    };
-    for (const s of segs?.segments ?? []) note(s.values[at], s.total);
-    for (const c of test) note(c.data[languageField], 0);
-    for (const v of languages) note(v.values[0], 0);
-  }
-
-  type Row = { key: string; values: (string | number | boolean | null)[]; total?: number; eligible?: number };
-  const rows = new Map<string, Row>();
-  const add = (values: Row['values'], extra: Partial<Row> = {}) => {
-    const key = segmentKey(chosen, values);
-    if (!rows.has(key)) rows.set(key, { key, values, ...extra });
-  };
-  for (const s of segs?.segments ?? []) if (!s.values.every((v) => v === null || v === '')) add(s.values, { total: s.total, eligible: s.eligible });
-  for (const c of test) add(chosenFields.map((f) => c.data[f.key] ?? null));
-  for (const v of copies) add(v.values);
-  const list = [...rows.values()];
-  const codeOf = (values: Row['values']) => values.map((x) => (x === null || x === '' ? 'blank' : typeof x === 'boolean' ? (x ? 'yes' : 'no') : String(x))).join('-');
-  const effective = { ...content, versioning: { mode, ...(languageField ? { languageField } : {}) } };
-  const resolve = (r: Row) => {
-    const contact = Object.fromEntries(chosen.map((k, i) => [k, r.values[i] ?? null]));
-    const pick = pickVersion(effective, chosen, contact);
-    const src = pick.variant ?? content;
-    return { ...pick, shown: blocksShownFor(src.blocks, contact, typeOf).length, total: src.blocks.length };
-  };
-  const contactsOnDefault = list.filter((r) => resolve(r).layer === 'default').reduce((n, r) => n + (r.total ?? 0), 0);
-
-  function commit(id: string | null) {
-    if (!id) setError('Could not add that version: it already exists, or the campaign has the most versions allowed.');
-    else onOpen();
-  }
-  function ensureVersioning() { if (!saved || saved.mode !== mode || saved.languageField !== languageField) setVersioning({ mode, ...(languageField ? { languageField } : {}) }); }
-  function createCopy(values: Row['values']) {
-    setError('');
-    ensureVersioning();
-    commit(addVariant(chosen, values, copyFrom || null));
-  }
-  function createLanguage(value: string) {
-    setError('');
-    if (!languageField) return;
-    ensureVersioning();
-    commit(addLanguageVersion(languageField, value, copyFrom || null));
-  }
-  function createTyped() {
-    const values: Row['values'] = [];
-    for (const f of chosenFields) {
-      const cell = parseCell(f, typed[f.key] ?? '');
-      if ('error' in cell) { setError(cell.error + '.'); return; }
-      values.push(cell.value);
-    }
-    setTyped({});
-    createCopy(values);
-  }
-
-  return (
-    <div className="card wide" data-testid="segment-versions">
-      <h3 style={{ marginTop: 0 }}>One email for each segment</h3>
-      <p className="muted small">Contacts get, in this order: an email written only for their segment, else the default email for their language, else the overall Default email.</p>
-      {error && <p className="error" role="alert">{error}</p>}
-
-      <fieldset className="build-mode" disabled={!canEdit}>
-        <legend>How will you build the versions?</legend>
-        <label className="check"><input type="radio" name="build-mode" checked={mode === 'conditions'} onChange={() => setMode('conditions')} />
-          <span><strong>One email per language, with show/hide conditions.</strong> Each language gets a default email that holds every block any of its segments need. On each block you choose which segments see it.</span></label>
-        <label className="check"><input type="radio" name="build-mode" checked={mode === 'copies'} onChange={() => setMode('copies')} />
-          <span><strong>A separate copy for each segment.</strong> A segment's version starts as a copy of the Default (or of another version) and you add, delete and edit its blocks one version at a time.</span></label>
-      </fieldset>
-
-      {mode === 'conditions' && (
-        <label className="lang-setting">Language field
-          <select aria-label="Language field" disabled={!canEdit} value={languageField ?? ''} onChange={(e) => setLanguageField(e.target.value)}>
-            <option value="">— none —</option>
-            {chosenFields.map((f) => <option key={f.key} value={f.key}>{label(f)}</option>)}
-          </select>
-        </label>
-      )}
-      {mode === 'conditions' && !languageField && <p className="muted small">Choose the field that holds the language (it must be one of the segment fields above) to get a default email for each language. Without it, everyone gets the Default email, with show/hide conditions applied.</p>}
-
-      {canEdit && (
-        <label>New versions start as a copy of
-          <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
-            <option value="">The Default email</option>
-            {languages.map((v) => <option key={v.id} value={v.id}>The {versionName(v)} email</option>)}
-            {copies.map((v) => <option key={v.id} value={v.id}>The {versionName(v)} version</option>)}
-          </select>
-        </label>
-      )}
-
-      {useLanguages && (
-        <>
-          <h4>Default email for each language</h4>
-          <p className="muted small">The languages come from this campaign's segments ({languageFieldLabel ? plainLabel(languageFieldLabel) : ''}). Put every block that any segment of the language needs in its default, then set who sees each block.</p>
-          {found.size === 0 && <p className="muted">No languages found yet. Import contacts, add test combinations, or type a language below.</p>}
-          {found.size > 0 && (
-            <div className="table-scroll">
-              <table>
-                <thead><tr><th>Language</th><th>Contacts</th><th>Default email</th><th></th></tr></thead>
-                <tbody>
-                  {[...found.entries()].map(([k, l]) => {
-                    const v = languages.find((x) => x.key === segmentKey([languageField!], [l.value]));
-                    return (
-                      <tr key={k}>
-                        <td><strong>{l.value}</strong></td>
-                        <td>{l.contacts}</td>
-                        <td>{v ? <span className="ok">{v.blocks.length} block{v.blocks.length === 1 ? '' : 's'}</span> : <span className="muted">Not created yet</span>}</td>
-                        <td>
-                          {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${l.value} default`} onClick={() => { setEditing(v.id); onOpen(); }}>{canEdit ? 'Edit' : 'View'}</button>}
-                          {v && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${l.value} default`} onClick={() => { if (window.confirm(`Delete the default email for ${l.value}? Its segments will get the overall Default.`)) removeVariant(v.id); }}>Delete</button>}
-                          {!v && canEdit && <button type="button" className="link" aria-label={`Create the default for ${l.value}`} onClick={() => createLanguage(l.value)}>Create default</button>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {canEdit && (
-            <div className="inline-form">
-              <div><label htmlFor="typed-language">Another language</label><input id="typed-language" value={typedLanguage} onChange={(e) => setTypedLanguage(e.target.value)} placeholder="e.g. fr" /></div>
-              <div className="inline-form-actions"><button type="button" disabled={!typedLanguage.trim()} onClick={() => { createLanguage(typedLanguage.trim()); setTypedLanguage(''); }}>Create this default</button></div>
-            </div>
-          )}
-        </>
-      )}
-
-      <h4>Which email each segment receives</h4>
-      <div className="table-scroll">
-        <table>
-          <thead><tr><th>Segment</th><th>Contacts</th><th>Email</th><th></th></tr></thead>
-          <tbody>
-            <tr><td><strong>Overall Default</strong></td><td className="muted small">{contactsOnDefault > 0 ? `${contactsOnDefault} in segments with no version` : 'everyone else'}</td><td>Default email</td><td><button type="button" className="link" onClick={() => { setEditing(null); onOpen(); }}>Edit</button></td></tr>
-            {list.map((r) => {
-              const own = copies.find((v) => v.key === r.key);
-              const res = resolve(r);
-              const code = own ? variantCode(own) : codeOf(r.values);
-              return (
-                <tr key={r.key}>
-                  <td><strong>{code}</strong></td>
-                  <td>{r.total !== undefined ? `${r.total} (${r.eligible} eligible)` : <span className="muted small">no contacts in your list</span>}</td>
-                  <td>
-                    {res.layer === 'copy' && <span className="ok">Own copy</span>}
-                    {res.layer === 'language' && <span>{versionName(res.variant!)}<span className="muted small"> · {res.shown} of {res.total} blocks</span></span>}
-                    {res.layer === 'default' && <span className="muted">Uses the Default{res.total !== res.shown ? ` · ${res.shown} of ${res.total} blocks` : ''}</span>}
-                  </td>
-                  <td>
-                    {own && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${code} version`} onClick={() => { setEditing(own.id); onOpen(); }}>{canEdit ? 'Edit' : 'View'}</button>}
-                    {own && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${code} version`} onClick={() => { if (window.confirm(`Delete the ${code} version of this email? Its contacts will get ${useLanguages ? 'the language default or the overall Default' : 'the Default email'}.`)) removeVariant(own.id); }}>Delete</button>}
-                    {!own && res.layer === 'language' && <button type="button" className="link" aria-label={`Edit the ${code} email`} onClick={() => { setEditing(res.variant!.id); onOpen(); }}>{canEdit ? 'Edit the language default' : 'View'}</button>}
-                    {!own && canEdit && <button type="button" className="link" aria-label={`Create a version for ${code}`} onClick={() => createCopy(r.values)}>{res.layer === 'language' ? 'Make a separate copy' : 'Create version'}</button>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {canEdit && (
-        <>
-          <p className="small" style={{ marginTop: 12 }}><strong>Another segment.</strong> Type one value for each field to write a separate copy for a segment that is not in the list yet.</p>
-          <div className="map-grid">
-            {chosenFields.map((f) => (
-              <label key={f.key}>{label(f)}
-                <input aria-label={`Version value for ${label(f)}`} value={typed[f.key] ?? ''} onChange={(e) => setTyped({ ...typed, [f.key]: e.target.value })} />
-              </label>
-            ))}
-          </div>
-          <p><button type="button" disabled={chosenFields.some((f) => !(typed[f.key] ?? '').trim())} onClick={createTyped}>Create this version</button></p>
-        </>
-      )}
-      {unused.length > 0 && (
-        <details>
-          <summary>{unused.length} version{unused.length > 1 ? 's' : ''} not used now</summary>
-          <p className="muted small">These were made for other segment fields, or for language defaults that are switched off. They are kept, and used again if you choose the same settings. Contacts get another email meanwhile.</p>
-          <ul>{unused.map((v) => <li key={v.id}><strong>{versionName(v)}</strong> <span className="muted small">({v.fields.join(', ')})</span> {canEdit && <button type="button" className="link danger" onClick={() => { if (window.confirm('Delete this version?')) removeVariant(v.id); }}>Delete</button>}</li>)}</ul>
-        </details>
-      )}
-    </div>
-  );
-}
-
-function AudiencePane({ campaignId, canEdit, onOpenVersion, onContinue }: { campaignId: string; canEdit: boolean; onOpenVersion: () => void; onContinue: () => void }) {
-  const { can } = useSession();
-  const [info, setInfo] = useState<AudienceInfo | null>(null);
-  const [segs, setSegs] = useState<SegmentsResponse | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [note, setNote] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    const i = await api<AudienceInfo>('GET', `/api/campaigns/${campaignId}/audience`);
-    setInfo(i);
-    if (can('audience.manage') && i.audience.fields.length) setSegs(await api<SegmentsResponse>('GET', `/api/audience/segments?fields=${i.audience.fields.join(',')}`));
-    else setSegs(null);
-  }, [campaignId, can]);
-  useEffect(() => { load().catch((e) => setError(errorText(e))); }, [load]);
-
-  const guarded = async (fn: () => Promise<void>) => {
-    setError('');
-    setBusy(true);
-    try { await fn(); await load(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
-  };
-  const chosen = info?.audience.fields ?? [];
-  const chosenFields = chosen.map((k) => info?.available.find((f) => f.key === k)).filter((f): f is ContactField => !!f);
-
-  function changeFields(next: string[]) {
-    const hasVersions = activeVariants(useEditor.getState().content, chosen).length > 0;
-    const parts = [info && info.test.length ? 'removes the test audience made for this campaign' : '', hasVersions ? 'stops using the segment versions you wrote (they are kept, and used again if you choose the same fields)' : ''].filter(Boolean);
-    if (next.join() !== chosen.join() && parts.length && !window.confirm(`Changing the fields ${parts.join(' and ')}. Continue?`)) return;
-    void guarded(async () => { await api('PUT', `/api/campaigns/${campaignId}/audience`, { fields: next }); });
-  }
-  const generate = (mode: 'sheet' | 'values') => guarded(async () => {
-    const vals = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, v.split(',').map((s) => s.trim()).filter(Boolean)]));
-    const r = await api<TestAudienceResult>('POST', `/api/campaigns/${campaignId}/test-audience`, { mode, values: mode === 'values' ? vals : undefined });
-    setNote(r.added === 0 ? 'Nothing new to add: those combinations are already in the test audience.' : `Added ${r.added} test contact${r.added === 1 ? '' : 's'}${r.alreadyThere ? ` (${r.alreadyThere} already there)` : ''}.`);
-    if (mode === 'values') setValues({});
-  });
-
-  return (
-    <div className="audience-pane">
-      <p className="step-line" data-testid="audience-step"><strong>Step 1 of 2: who is this campaign for?</strong> <span className="muted">Set up the segments first. They tell you which languages and versions you need.</span> <button type="button" className="primary" onClick={onContinue}>Step 2: write the email →</button></p>
-      <h2>Who this campaign is for</h2>
-      <p className="muted small">Choose the fields that split this campaign's audience into segments, for example Country and Language. A segment is named from its values, such as UAE-en or EG-ar, and those names appear in Preview and test sends. Each campaign can use different fields.</p>
-      {error && <p className="error" role="alert">{error}</p>}
-      <SegmentFieldPicker available={info?.available ?? []} chosen={chosen} disabled={!canEdit || busy} onChange={changeFields} idPrefix="campaign-seg" />
-      {canEdit && can('audience.manage') && <AddFieldInline onAdded={() => void guarded(async () => undefined)} />}
-      {!canEdit && <p className="muted small">Only a Builder can change this, and only while the campaign is a draft.</p>}
-      {note && <p className="ok" role="status">{note}</p>}
-
-      {chosen.length === 0 && <p className="muted">Pick at least one field to see the segments and to create a test audience.</p>}
-      {segs && (
-        <>
-          <h3>Segments in your contact list</h3>
-          <div className="table-scroll">
-            <table>
-              <thead><tr><th>Segment</th>{segs.fields.map((f) => <th key={f.key}>{f.label.replace(/ \(.*\)$/, '')}</th>)}<th>Contacts</th><th>Eligible</th></tr></thead>
-              <tbody>{segs.segments.map((s) => <tr key={s.id}><td><strong>{segmentCode(s.values)}</strong></td>{s.values.map((v, i) => <td key={i}>{valueLabel(v)}</td>)}<td>{s.total}</td><td>{s.eligible}</td></tr>)}</tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {chosen.length > 0 && <VersioningCard chosen={chosen} chosenFields={chosenFields} segs={segs} test={info?.test ?? []} canEdit={canEdit} onOpen={onOpenVersion} />}
-
-      {chosen.length > 0 && (
-        <div className="card wide" data-testid="test-audience">
-          <h3 style={{ marginTop: 0 }}>Test audience</h3>
-          <p className="muted small">Made-up contacts, one for each segment, to try this email against. They are not part of your contact list, they are never emailed, and they use made-up addresses ending in .invalid. Pick one in the Preview tab with "Preview as".</p>
-          {canEdit && (
-            <>
-              <p className="small"><strong>Add combinations.</strong> Type the values for each field. Every value you list for one field is combined with the values you list for the others, and anything already in the test audience is kept. For example Country UAE with Language en, ar adds UAE-en and UAE-ar. Then add Country FR with Language fr for FR-fr.</p>
-              <div className="map-grid">
-                {chosenFields.map((f) => (
-                  <label key={f.key}>{f.label.replace(/ \(.*\)$/, '')} <span className="muted small">(separate several with commas)</span>
-                    <input value={values[f.key] ?? ''} placeholder={f.type === 'text' ? 'e.g. UAE' : ''} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
-                  </label>
-                ))}
-              </div>
-              <div className="row" style={{ marginTop: 10 }}>
-                <div style={{ flex: '0 0 auto' }}><button type="button" className="primary" disabled={busy || chosenFields.some((f) => !(values[f.key] ?? '').trim())} onClick={() => void generate('values')}>Add these combinations</button></div>
-                <div style={{ flex: '0 0 auto' }}><button type="button" disabled={busy} onClick={() => void generate('sheet')}>Add the segments from my contact list</button></div>
-                {(info?.test.length ?? 0) > 0 && <button type="button" disabled={busy} onClick={() => { if (window.confirm('Remove every test contact of this campaign?')) void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience`); }); }}>Remove all</button>}
-              </div>
-            </>
-          )}
-          {(info?.test.length ?? 0) > 0 && (
-            <div className="table-scroll" style={{ marginTop: 10 }}>
-              <table>
-                <thead><tr><th>Segment</th><th>Test contact</th><th>Made-up address</th><th></th></tr></thead>
-                <tbody>{info!.test.map((c) => <tr key={c.id}><td><strong>{c.code}</strong></td><td>{String(c.data.first_name ?? '')} {String(c.data.last_name ?? '')}</td><td className="muted small">{c.email}</td><td>{canEdit && <button type="button" className="link danger" aria-label={`Remove test contact ${c.code}`} disabled={busy} onClick={() => void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience/${c.id}`); })}>Remove</button>}</td></tr>)}</tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** Live preview: the real email HTML next to the canvas, refreshed shortly after each saved edit. */
 function LivePane({ campaignId }: { campaignId: string }) {
   const saveState = useEditor((s) => s.saveState);
@@ -886,7 +546,11 @@ function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; can
   const setEditing = useEditor((s) => s.setEditing);
   const active = activeVariants(content, audienceFields);
   const languages = activeLanguageVersions(content, audienceFields);
-  if (active.length === 0 && languages.length === 0) return null;
+  if (active.length === 0 && languages.length === 0) {
+    return content.versioning?.mode === 'conditions'
+      ? <div className="version-bar" data-testid="version-bar"><span className="muted small">No language emails yet. Create the email for each language in the Segments tab, then come back to add blocks and choose who sees them.</span></div>
+      : null;
+  }
   const current = [...active, ...languages].find((v) => v.id === editing);
   return (
     <div className="version-bar" data-testid="version-bar">
@@ -915,7 +579,7 @@ export function EditorPage() {
   const s = useEditor();
   const location = useLocation();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'edit' | 'audience' | 'preview' | 'versions'>((location.state as { tab?: 'audience' } | null)?.tab ?? 'edit'); // a new campaign opens on its Audience: segments come first
+  const [tab, setTab] = useState<'segments' | 'email' | 'preview' | 'versions'>((location.state as { tab?: 'segments' } | null)?.tab ?? 'email'); // a new campaign opens on its Segments: who it is for comes first
   // the "open on Audience" hint is for the first visit only: a reload goes back to the normal view
   useEffect(() => { if (location.state) navigate(location.pathname, { replace: true, state: null }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [loadError, setLoadError] = useState('');
@@ -923,6 +587,8 @@ export function EditorPage() {
   const [live, setLive] = useState(false);
   const [audienceFields, setAudienceFields] = useState<string[]>([]);
   const [availableFields, setAvailableFields] = useState<ContactField[]>([]);
+  const [segmentsRefresh, setSegmentsRefresh] = useState(0);
+  useDerivedTestContacts(id, canEdit && s.status === 'draft' && s.campaignId === id, () => setSegmentsRefresh((n) => n + 1));
 
   const reload = useCallback(async () => {
     try {
@@ -1001,10 +667,11 @@ export function EditorPage() {
     error: s.message, invalid: `Not saved: ${s.message}`, conflict: s.message,
   };
 
+  const perLanguage = modeOf(s.content) === 'conditions';
   const segmentFields = audienceFields.map((k) => availableFields.find((f) => f.key === k)).filter((f): f is ContactField => !!f);
 
   return (
-    <AudienceCtx.Provider value={{ segmentFields }}>
+    <AudienceCtx.Provider value={{ segmentFields, conditionFields: perLanguage ? availableFields : segmentFields, perLanguage }}>
     <div className="editor">
       <div className="editor-top">
         <Link to="/" className="back">← Campaigns</Link>
@@ -1028,7 +695,7 @@ export function EditorPage() {
             <button type="button" onClick={s.redo} disabled={s.future.length === 0} aria-label="Redo">↷ Redo</button>
           </>
         )}
-        {tab === 'edit' && (
+        {tab === 'email' && (
           <label className={`switch switch-small${live ? ' on' : ''}`} title="Show the real email next to the editor while you work">
             <input type="checkbox" role="switch" checked={live} onChange={(e) => setLive(e.target.checked)} />
             <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
@@ -1036,16 +703,16 @@ export function EditorPage() {
           </label>
         )}
         <div role="tablist" className="tabs">
-          {(['edit', 'audience', 'preview', 'versions'] as const).map((t) => (
+          {(['segments', 'email', 'preview', 'versions'] as const).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-              {t === 'edit' ? 'Edit' : t === 'audience' ? 'Audience' : t === 'preview' ? 'Preview' : 'Versions'}
+              {t === 'segments' ? 'Segments' : t === 'email' ? 'Email' : t === 'preview' ? 'Preview' : 'Versions'}
             </button>
           ))}
         </div>
       </div>
 
-      {tab === 'edit' && <VersionBar audienceFields={audienceFields} canEdit={canEdit} />}
-      {tab === 'edit' && (
+      {tab === 'email' && <VersionBar audienceFields={audienceFields} canEdit={canEdit} />}
+      {tab === 'email' && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e: DragStartEvent) => setDragging(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
           <div className={`editor-grid${live ? ' live' : ''}`}>
             <aside className="panel-left" aria-label="Block library">
@@ -1067,9 +734,9 @@ export function EditorPage() {
           <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>
         </DndContext>
       )}
-      {tab === 'audience' && <div className="tab-body"><AudiencePane campaignId={id} canEdit={canEdit && s.status === 'draft'} onOpenVersion={() => setTab('edit')} onContinue={() => setTab('edit')} /></div>}
+      {tab === 'segments' && <div className="tab-body"><SegmentsPane campaignId={id} canEdit={canEdit && s.status === 'draft'} refreshKey={segmentsRefresh} onOpenVersion={() => setTab('email')} onContinue={() => setTab('email')} /></div>}
       {tab === 'preview' && <div className="tab-body"><PreviewPane campaignId={id} /></div>}
-      {tab === 'versions' && <div className="tab-body"><VersionsPane campaignId={id} canEdit={canEdit} onRestored={() => setTab('edit')} /></div>}
+      {tab === 'versions' && <div className="tab-body"><VersionsPane campaignId={id} canEdit={canEdit} onRestored={() => setTab('email')} /></div>}
     </div>
     </AudienceCtx.Provider>
   );

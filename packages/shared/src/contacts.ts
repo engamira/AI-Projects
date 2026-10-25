@@ -261,12 +261,14 @@ export type TestContactDto = { id: string; code: string; email: string; data: Re
 
 export type TestAudienceRequest = {
   /** "sheet": add one test contact for each segment that exists in your contact list. "values": add the combinations of the values you type (for each field, every value you list is combined with the values of the other fields). */
-  mode: 'sheet' | 'values';
+  mode: 'sheet' | 'values' | 'combos';
   /** For mode "values": the values for each segment field (field key -> values). Example: country UAE, language en and ar adds UAE-en and UAE-ar. */
   values?: Record<string, string[]>;
+  /** For mode "combos": exact combinations (fields and one list of values per combination), used for the segments that block conditions create. '' = any other value. */
+  combos?: { fields: string[]; rows: string[][] };
 };
 export type TestAudienceResult = { contacts: TestContactDto[]; added: number; alreadyThere: number };
-export const TEST_AUDIENCE_MAX = 60;
+export const TEST_AUDIENCE_MAX = 2000;
 
 export type PreviewRecipient = { id: string; label: string };
 export type PreviewRecipientGroup = { title: string; recipients: PreviewRecipient[] };

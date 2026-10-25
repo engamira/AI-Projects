@@ -51,6 +51,8 @@ export type Versioning = {
   mode: 'conditions' | 'copies';
   /** The contact field that holds the language (one of the campaign's segment fields). */
   languageField?: string;
+  /** Sends one segment the email of another: segment key (see routeKeyFor in versions.ts) -> "default" or the id of a version. Absent: the automatic choice. */
+  routes?: Record<string, string>;
 };
 
 export type EmailContent = {
@@ -62,7 +64,7 @@ export type EmailContent = {
   versioning?: Versioning;
 };
 
-export const MAX_VARIANTS = 50;
+export const MAX_VARIANTS = 200;
 
 export const MAX_BLOCKS = 100;
 
@@ -235,7 +237,7 @@ const envelope = z.object({
     settings: z.record(z.string(), z.unknown()),
     blocks: z.array(blockShape).max(MAX_BLOCKS),
   }).strict()).max(MAX_VARIANTS).optional(),
-  versioning: z.object({ mode: z.enum(['conditions', 'copies']), languageField: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).optional() }).strict().optional(),
+  versioning: z.object({ mode: z.enum(['conditions', 'copies']), languageField: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).optional(), routes: z.record(z.string().max(2000), z.string().max(40)).optional() }).strict().optional(),
 }).strict();
 
 export type ValidationResult = { ok: true; content: EmailContent } | { ok: false; error: string };

@@ -60,10 +60,31 @@ export async function generateTestAudience(q: Queryable, campaignId: string, req
   const keys = await getAudienceFields(q, campaignId);
   if (keys.length === 0) return { error: 'Choose the fields that segment this campaign first.' };
   const fields = await allFields(q);
-  const ordered = keys.map((k) => fields.find((f) => f.key === k)!).filter(Boolean);
+  let ordered = keys.map((k) => fields.find((f) => f.key === k)!).filter(Boolean);
 
   let combos: Value[][] = [];
-  if (req.mode === 'sheet') {
+  if (req.mode === 'combos') {
+    // exact combinations, for the segments that block conditions create (an empty value = any other value)
+    const want = req.combos;
+    if (!want || want.fields.length === 0 || want.fields.length > MAX_FIELDS + 1) return { error: 'Give the fields and values to build.' };
+    ordered = [];
+    for (const k of want.fields) {
+      const f = fields.find((x) => x.key === k);
+      if (!f || k === 'email' || k === 'marketing_permission') return { error: `There is no field called "${k}" that can be used here.` };
+      ordered.push(f);
+    }
+    for (const row of want.rows) {
+      if (row.length !== ordered.length) return { error: 'Each combination needs one value for every field.' };
+      const out: Value[] = [];
+      for (const [j, raw] of row.entries()) {
+        if (raw.trim() === '') { out.push(''); continue; }
+        const cell = parseCell(ordered[j]!, raw);
+        if ('error' in cell) return { error: cell.error + '.' };
+        out.push(cell.value === null ? '' : cell.value);
+      }
+      combos.push(out);
+    }
+  } else if (req.mode === 'sheet') {
     for (const s of segmentContacts(await listContacts(q), ordered)) {
       if (s.values.every((v) => v === null || v === '')) continue; // a segment with nothing in it is not worth testing
       combos.push(s.values.map((v) => (v === null || v === '' ? '' : v)));
@@ -93,7 +114,7 @@ export async function generateTestAudience(q: Queryable, campaignId: string, req
   const existing = await listTestContacts(q, campaignId);
   const have = new Set(existing.map((c) => c.code.toLowerCase()));
   const fresh = combos
-    .map((c) => ({ c, code: segmentCode(c.map((v) => (v === '' ? null : v))) }))
+    .map((c) => ({ c, code: req.mode === 'combos' ? c.map((v) => (v === '' ? 'Default' : String(v))).join('-') : segmentCode(c.map((v) => (v === '' ? null : v))) }))
     .filter((x, i, all) => !have.has(x.code.toLowerCase()) && all.findIndex((y) => y.code.toLowerCase() === x.code.toLowerCase()) === i);
   if (existing.length + fresh.length > TEST_AUDIENCE_MAX) {
     return { error: `That would make ${existing.length + fresh.length} test contacts. The most is ${TEST_AUDIENCE_MAX}: remove some or add fewer.` };

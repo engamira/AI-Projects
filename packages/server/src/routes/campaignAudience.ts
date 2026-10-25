@@ -9,7 +9,8 @@ import { logActivity } from '../services.js';
 const idParam = z.object({ id: z.string().uuid() });
 const fieldsBody = z.object({ fields: z.array(z.string().max(60)).max(20) });
 const testBody = z.object({
-  mode: z.enum(['sheet', 'values']),
+  mode: z.enum(['sheet', 'values', 'combos']),
+  combos: z.object({ fields: z.array(z.string().max(60)).max(11), rows: z.array(z.array(z.string().max(100)).max(11)).max(2000) }).optional(),
   values: z.record(z.string().max(60), z.array(z.string().max(100)).max(30)).optional(),
 });
 
