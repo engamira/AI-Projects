@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  activeLanguageVersions, activeVariants, blocksShownFor, derivedSegments, pickVersion, routeKeyFor, segmentCode, segmentKey, versionName,
+  activeLanguageVersions, activeVariants, blocksShownFor, defaultEmailName, derivedSegments, pickVersion, routeKeyFor, segmentCode, segmentKey, versionName,
   type ContactField, type EmailContent, type SegmentVersion, type SegmentsResponse, type TestContactDto,
 } from '@cl/shared';
 import { api, errorText } from '../api';
@@ -69,9 +69,13 @@ export function useSegmentData(campaignId: string, refreshKey: number) {
   const rowList: SegmentRow[] = [];
   let tooMany = false;
   if (mode === 'conditions' && languageField) {
-    const d = derivedSegments(content, chosen, [...found.values()].map((l) => l.value), typeOf);
+    // English is the Default email, so its rules make segments too
+    const langs = [...found.values()].map((l) => l.value);
+    if (!langs.some((l) => l.toLowerCase() === 'en')) langs.push('en');
+    const d = derivedSegments(content, chosen, langs, typeOf);
     tooMany = d.tooMany;
-    for (const r of d.rows) {
+    // the "any other case" of a language (Default-ar) is the language's email itself, not a segment
+    for (const r of d.rows.filter((x) => !x.template)) {
       const at = segs?.segments.find((s) => segmentKey(chosen, s.values) === segmentKey([languageField], [r.language]));
       rowList.push({
         key: r.key, code: r.code, values: r.values.map((x) => x || null), fields: r.fields, samples: r.samples,
@@ -105,7 +109,8 @@ export function useSegmentData(campaignId: string, refreshKey: number) {
   };
   const nameOf = (variantId: string | null | undefined): string => {
     const v = (content.variants ?? []).find((x) => x.id === variantId);
-    return v ? `${versionName(v)}${v.kind ? ' email' : ' version'}` : 'Default email';
+    if (v) return `${versionName(v)}${v.kind ? ' email' : ' version'}`;
+    return mode === 'conditions' ? `${defaultEmailName(content)} email` : 'Default email';
   };
   const routeKey = (r: SegmentRow): string => routeKeyFor(content, chosen, sampleContact(r), typeOf);
   const routeOf = (r: SegmentRow): string => routes[routeKey(r)] ?? '';

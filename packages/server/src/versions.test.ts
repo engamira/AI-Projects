@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
-  activeLanguageVersions, blocksShownFor, derivedSegments, routeKeyFor, describeCondition, evaluateCondition, pickVersion, validateCondition, type Comparison, type ConditionGroup,
+  activeLanguageVersions, blocksShownFor, defaultEmailName, derivedSegments, routeKeyFor, versionName, describeCondition, evaluateCondition, pickVersion, validateCondition, type Comparison, type ConditionGroup,
   blockDefinition, cloneContent, createInstance, emptyContent, flatContent, newVariant, pickVariant, segmentKey, validateContent, versionOf,
   type EmailContent, type TestContactDto,
 } from '@cl/shared';
@@ -352,7 +352,7 @@ describe('previews with languages and conditions', () => {
     expect(uae.html).toContain('For everyone in Arabic');
     expect(uae.html).toContain('UAE offer');
     expect(uae.html).not.toContain('Egypt offer');
-    expect(uae.versionLabel).toBe('ar default · 2 of 3 blocks');
+    expect(uae.versionLabel).toBe('ar dynamic · 2 of 3 blocks');
     const eg = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'EG-ar')!.id}`)).body;
     expect(eg.html).toContain('Egypt offer');
     expect(eg.html).not.toContain('UAE offer');
@@ -423,9 +423,9 @@ describe('segments made by block conditions, and sending one segment the email o
     c.versioning = { ...c.versioning!, routes: { [routeKeyFor(c, ['language'], sa.data)]: 'default' } };
     expect((await builder.put(`/api/campaigns/${id}/draft`, { content: c, baseVersion: 1 })).status).toBe(200);
     const asSa = (await builder.get(`/api/campaigns/${id}/preview?as=test:${sa.id}`)).body;
-    expect(asSa.versionLabel).toBe('Default version');
+    expect(asSa.versionLabel).toBe('en default');
     const asUae = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'UAE-en')!.id}`)).body;
-    expect(asUae.versionLabel).toBe('en default · 2 of 3 blocks');
+    expect(asUae.versionLabel).toBe('en dynamic · 2 of 3 blocks');
     expect(asUae.html).toContain('UAE only');
     expect(asUae.html).not.toContain('SA only');
     expect(en.blocks.length).toBe(3);
@@ -489,5 +489,28 @@ describe('every comparison makes a segment, and several values can be typed in o
     expect(k('UAE')[1][0]).toBe('uae'); // meets "is UAE" and "contains ua": the plain value wins
     expect(k('Guam')[1][0]).toBe('has ua'); // only "contains ua"
     expect(k('Egypt')[1][0]).toBe(''); // none: Default
+  });
+});
+
+describe('language email names, and English as the Default email', () => {
+  it('names a language email "default" until rules are set, then "dynamic"; the Default email is the English one', () => {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    const ar = newVariant(c, ['language'], ['ar'], 'language');
+    expect(versionName(ar)).toBe('ar default');
+    ar.blocks[0]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is', values: ['UAE'] }] };
+    expect(versionName(ar)).toBe('ar dynamic');
+    expect(defaultEmailName(c)).toBe('en default');
+    c.blocks[0]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is', values: ['UAE'] }] };
+    expect(defaultEmailName(c)).toBe('en dynamic');
+  });
+
+  it('the "any other case" of a language is marked as the language email itself, and English uses the Default email\'s rules', () => {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    c.blocks[0]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is', values: ['UAE'] }] };
+    const d = derivedSegments(c, ['language'], ['en']);
+    expect(d.rows.map((r) => [r.code, r.template])).toEqual([['UAE-en', false], ['Default-en', true]]);
+    expect(derivedSegments(c, ['language'], ['fr']).rows.map((r) => r.code)).toEqual(['fr']); // French has no email, so no rules of its own
   });
 });

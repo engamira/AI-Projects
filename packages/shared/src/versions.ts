@@ -85,6 +85,8 @@ export type Atom = { code: string; rule: ConditionRule; /** a made-up value that
 
 export type DerivedSegment = {
   fields: string[]; values: string[]; key: string; code: string; language: string;
+  /** True for "any other case" of a language (for example Default-ar): that is the language's email itself, not a segment. */
+  template: boolean;
   /** A value to give a made-up test contact for each field ('' = blank), or null when this segment cannot be built (an earlier rule always wins). */
   samples: string[] | null;
 };
@@ -166,8 +168,7 @@ export function derivedSegments(content: EmailContent, audienceFields: string[],
   const rows: DerivedSegment[] = [];
   if (content.versioning?.mode !== 'conditions' || !lf || !audienceFields.includes(lf)) return { rows, tooMany: false };
   for (const language of languages) {
-    const lkey = segmentKey([lf], [language]);
-    const v = (content.variants ?? []).find((x) => x.kind === 'language' && x.key === lkey && x.fields.join(',') === lf);
+    const v = languageEmailOf(content, lf, language);
     const atoms = v ? atomsIn(v, [lf], typeOf) : new Map<string, Atom[]>();
     const fields = [...atoms.keys()];
     type Part = { code: string; sample: string | null };
@@ -181,6 +182,7 @@ export function derivedSegments(content: EmailContent, audienceFields: string[],
       const values = [...c.map((p) => p.code), language];
       rows.push({
         fields: [...fields, lf], values, key: segmentKey([...fields, lf], values), code: values.map((x) => x || 'Default').join('-'), language,
+        template: fields.length > 0 && c.every((p) => p.code === ''),
         samples: c.every((p) => p.sample !== null) ? [...c.map((p) => p.sample as string), language] : null,
       });
       if (rows.length >= MAX_DERIVED) return { rows, tooMany: true };
@@ -193,8 +195,7 @@ export function derivedSegments(content: EmailContent, audienceFields: string[],
 export function routeKeyFor(content: EmailContent, audienceFields: string[], contact: Record<string, Value>, typeOf: TypeOf = () => 'text'): string {
   const lf = content.versioning?.languageField;
   if (content.versioning?.mode === 'conditions' && lf && audienceFields.includes(lf)) {
-    const lkey = segmentKey([lf], [contact[lf]]);
-    const v = (content.variants ?? []).find((x) => x.kind === 'language' && x.key === lkey && x.fields.join(',') === lf);
+    const v = languageEmailOf(content, lf, segmentPart(contact[lf]));
     const atoms = v ? atomsIn(v, [lf], typeOf) : new Map<string, Atom[]>();
     const fields = [...atoms.keys()];
     const values = fields.map((f) => bucketOf(atoms.get(f)!, f, contact[f], typeOf));
@@ -224,5 +225,23 @@ export function activeLanguageVersions(content: EmailContent, audienceFields: st
   return (content.variants ?? []).filter((v) => v.kind === 'language' && v.fields.join(',') === lf);
 }
 
-/** The name shown for a version: UAE-ar for a segment copy, "ar default" for a language default. */
-export const versionName = (v: Pick<SegmentVersion, 'values' | 'kind'>): string => (v.kind === 'language' ? `${v.values[0] || 'blank'} default` : variantCode(v));
+/** Does any block of this version have a show/hide rule? */
+export const hasRules = (v: { blocks: BlockInstance[] }): boolean => v.blocks.some((b) => !!b.showWhen);
+
+/**
+ * The name shown for a version: UAE-ar for a segment copy; for a language email "ar default" (every block, no rules) or
+ * "ar dynamic" (rules on one or more blocks).
+ */
+export const versionName = (v: Pick<SegmentVersion, 'values' | 'kind'> & { blocks?: BlockInstance[] }): string =>
+  (v.kind === 'language' ? `${v.values[0] || 'blank'} ${v.blocks && hasRules({ blocks: v.blocks }) ? 'dynamic' : 'default'}` : variantCode(v));
+
+/** The overall Default email is the English email: "en default" or, with rules on its blocks, "en dynamic". */
+export const defaultEmailName = (content: { blocks: BlockInstance[] }): string => `en ${hasRules(content) ? 'dynamic' : 'default'}`;
+
+/** The email of one language: its own language email, or for English the Default email itself. */
+export function languageEmailOf(content: EmailContent, languageField: string, language: string): EmailVersion | undefined {
+  const key = segmentKey([languageField], [language]);
+  const own = (content.variants ?? []).find((x) => x.kind === 'language' && x.key === key && x.fields.join(',') === languageField);
+  if (own) return own;
+  return language.trim().toLowerCase() === 'en' ? content : undefined;
+}

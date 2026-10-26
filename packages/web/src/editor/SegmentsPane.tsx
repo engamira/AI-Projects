@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { parseCell, variantCode, versionName, segmentKey, type TestAudienceResult } from '@cl/shared';
+import { defaultEmailName, languageEmailOf, parseCell, variantCode, versionName, segmentKey, type TestAudienceResult } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
 import { SegmentFieldPicker } from '../components/SegmentFieldPicker';
@@ -109,13 +109,21 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
     else onOpenVersion();
   }
   function createCopy(vals: Cell[]) { setError(''); created(addVariant(chosen, vals, copyFrom || null)); }
-  function createLanguage(value: string) { setError(''); if (languageField) created(addLanguageVersion(languageField, value, copyFrom || null)); }
+  function createLanguage(value: string, from: string = copyFrom) { setError(''); if (languageField) created(addLanguageVersion(languageField, value, from || null)); }
   async function createTypedLanguage() {
-    const value = typedLanguage.trim();
-    if (!value || !languageField) return;
+    const names = typedLanguage.split(',').map((s) => s.trim()).filter(Boolean); // several languages may be typed, separated by commas
+    if (names.length === 0 || !languageField) return;
+    setError('');
+    setBusy(true);
+    try {
+      await api('POST', `/api/campaigns/${campaignId}/test-audience`, { mode: 'values', values: { [languageField]: names } });
+      await load();
+    } catch (e) { setError(errorText(e)); setBusy(false); return; } // nothing is created when the test contacts could not be built
+    setBusy(false);
     setTypedLanguage('');
-    await addTestFor({ [languageField]: [value] });
-    createLanguage(value);
+    let made = 0;
+    for (const n of names) if (!languageEmailOf(content, languageField, n) && addLanguageVersion(languageField, n, copyFrom || null)) made++;
+    setNote(`Added ${names.join(', ')}: test contacts built${made ? ` and ${made} language email${made === 1 ? '' : 's'} created` : ' (the emails already existed)'}. Open one with Edit.`);
   }
   async function createTyped() {
     const vals: Cell[] = [];
@@ -130,9 +138,17 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
     createCopy(vals);
   }
 
+  const copyFromOptions = (
+    <>
+      <option value="">{mode === 'conditions' ? `The ${defaultEmailName(content)} email` : 'The Default email'}</option>
+      {languages.map((v) => <option key={v.id} value={v.id}>The {versionName(v)} email</option>)}
+      {copies.map((v) => <option key={v.id} value={v.id}>The {variantCode(v)} version</option>)}
+    </>
+  );
+
   const emailOptions = (
     <>
-      <option value="default">Default email</option>
+      <option value="default">{mode === 'conditions' ? `${defaultEmailName(content)} email` : 'Default email'}</option>
       {languages.map((v) => <option key={v.id} value={v.id}>{versionName(v)} email</option>)}
       {copies.map((v) => <option key={v.id} value={v.id}>{variantCode(v)} version</option>)}
     </>
@@ -179,7 +195,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
             ? <p className="muted small">Choose the field that holds the language. Each language gets its own email; the rules on its blocks split it into more segments.</p>
             : <p className="muted small">Choose the fields that split this campaign's audience into segments, for example Country and Language. A segment is named from its values, such as UAE-en or EG-ar, and those names appear in Preview and test sends.</p>}
           <SegmentFieldPicker available={info?.available ?? []} chosen={chosen} max={mode === 'conditions' ? 1 : undefined} disabled={!canEdit || busy} onChange={changeFields} idPrefix="campaign-seg" />
-          {canEdit && can('audience.manage') && <AddFieldInline onAdded={() => void guarded(async () => undefined)} />}
+          {mode === 'copies' && canEdit && can('audience.manage') && <AddFieldInline onAdded={() => void guarded(async () => undefined)} />}
           {chosen.length === 0 && <p className="muted">Pick {mode === 'conditions' ? 'the language field' : 'at least one field'} to continue.</p>}
         </section>
       )}
@@ -233,20 +249,19 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
         <section className="seg-panel tint-map" aria-labelledby="seg-map-title">
           <h2 id="seg-map-title">Which email each segment receives</h2>
           <p className="muted small">Every segment is listed with the email it gets. It is chosen for you (a copy written for the segment, else the language's email, else the Default), and you can send any segment the email of another, for example the UAE-en email to SA-en too.</p>
-          {canEdit && (
+          {mode === 'copies' && canEdit && (
             <label>New versions start as a copy of
-              <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
-                <option value="">The Default email</option>
-                {languages.map((v) => <option key={v.id} value={v.id}>The {versionName(v)} email</option>)}
-                {copies.map((v) => <option key={v.id} value={v.id}>The {variantCode(v)} version</option>)}
-              </select>
+              <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>{copyFromOptions}</select>
             </label>
           )}
 
           {mode === 'conditions' && languageField && (
             <>
               <h3>The email for each language</h3>
-              <p className="muted small">Put every block that any segment of the language needs in its email, then choose who sees each block in the Email tab.</p>
+              <div className="note-box" data-testid="email-kinds">
+                <p className="small"><strong>Language default email</strong> (for example "ar default email"): holds all the possible blocks for every segment of the language, with no rules set. <strong>Language dynamic email</strong> (for example "ar dynamic email"): the same email once rules are set against one or more of its blocks, so each segment sees only its blocks.</p>
+                <p className="small"><strong>The overall Default email is the English email</strong>, called "{defaultEmailName(content)} email". Contacts whose language has no email of its own get it, and English contacts use it, so English needs no email of its own.</p>
+              </div>
               {found.size === 0 && <p className="muted">No languages yet. Build the test audience above, or type a language below.</p>}
               {found.size > 0 && (
                 <div className="table-scroll">
@@ -254,16 +269,23 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
                     <thead><tr><th>{lang}</th><th>Contacts</th><th>Email</th><th></th></tr></thead>
                     <tbody>
                       {[...found.entries()].map(([k, l]) => {
-                        const v = languages.find((x) => x.key === segmentKey([languageField], [l.value]));
+                        const own = languages.find((x) => x.key === segmentKey([languageField], [l.value]));
+                        const isEnglish = !own && l.value.toLowerCase() === 'en';
+                        const v = own ?? (isEnglish ? content : undefined);
                         return (
                           <tr key={k}>
                             <td><strong>{l.value}</strong></td>
                             <td>{l.contacts}</td>
-                            <td>{v ? <span className="ok">{v.blocks.length} block{v.blocks.length === 1 ? '' : 's'}</span> : <span className="muted">Not created yet</span>}</td>
+                            <td>{own ? <span className="ok">{versionName(own)} email <span className="muted small">· {own.blocks.length} block{own.blocks.length === 1 ? '' : 's'}</span></span> : isEnglish ? <span className="ok">{defaultEmailName(content)} email <span className="muted small">· the Default email</span></span> : null}</td>
                             <td>
-                              {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${l.value} default`} onClick={() => { setEditing(v.id); onOpenVersion(); }}>{canEdit ? 'Edit' : 'View'}</button>}
-                              {v && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${l.value} default`} onClick={() => { if (window.confirm(`Delete the email for ${l.value}? Its segments will get the Default email.`)) removeVariant(v.id); }}>Delete</button>}
-                              {!v && canEdit && <button type="button" className="link" aria-label={`Create the default for ${l.value}`} onClick={() => createLanguage(l.value)}>Create default</button>}
+                              {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${l.value} default`} onClick={() => { setEditing(own ? own.id : null); onOpenVersion(); }}>{canEdit ? 'Edit' : 'View'}</button>}
+                              {own && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${l.value} default`} onClick={() => { if (window.confirm(`Delete the email for ${l.value}? Its segments will get the Default email.`)) removeVariant(own.id); }}>Delete</button>}
+                              {!v && canEdit && (
+                                <select aria-label={`Create the email for ${l.value}`} value="__" onChange={(e) => { if (e.target.value !== '__') createLanguage(l.value, e.target.value); }}>
+                                  <option value="__">Create as a copy of…</option>
+                                  {copyFromOptions}
+                                </select>
+                              )}
                             </td>
                           </tr>
                         );
@@ -274,7 +296,8 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
               )}
               {canEdit && (
                 <div className="inline-form">
-                  <div><label htmlFor="typed-language">Another language</label><input id="typed-language" value={typedLanguage} onChange={(e) => setTypedLanguage(e.target.value)} placeholder="e.g. fr" /></div>
+                  <div><label htmlFor="typed-language">Another language <span className="muted small">(several separated by commas)</span></label><input id="typed-language" value={typedLanguage} onChange={(e) => setTypedLanguage(e.target.value)} placeholder="e.g. fr, de" /></div>
+                  <div><label htmlFor="typed-language-from">Create as a copy of</label><select id="typed-language-from" value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>{copyFromOptions}</select></div>
                   <div className="inline-form-actions"><button type="button" disabled={!typedLanguage.trim()} onClick={() => void createTypedLanguage()}>Create this email</button></div>
                 </div>
               )}
@@ -286,7 +309,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
             <table>
               <thead><tr><th>Segment</th><th>Contacts</th><th>Email it receives</th>{mode === 'copies' && <th></th>}</tr></thead>
               <tbody>
-                <tr><td><strong>Everyone else</strong></td><td className="muted small">no segment</td><td>Default email</td>{mode === 'copies' && <td><button type="button" className="link" onClick={() => { setEditing(null); onOpenVersion(); }}>Edit</button></td>}</tr>
+                <tr><td><strong>Everyone else</strong></td><td className="muted small">no segment</td><td>{mode === 'conditions' ? `${defaultEmailName(content)} email` : 'Default email'}</td>{mode === 'copies' && <td><button type="button" className="link" onClick={() => { setEditing(null); onOpenVersion(); }}>Edit</button></td>}</tr>
                 {rowList.map((r) => {
                   const own = mode === 'copies' ? copies.find((v) => v.key === r.key) : undefined;
                   const code = own ? variantCode(own) : r.code;

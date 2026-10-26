@@ -388,7 +388,7 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .tab-body > .preview-pane > .preview-bar { position: sticky; top: -16px; z-index: 6; background: var(--bg); padding: 10px 0; margin: -16px 0 6px; border-bottom: 1px solid var(--border); }
 
 /* Versions tab: segments on the left, their email on the right */
-.seg-overview { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 24px; }
+.seg-overview { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 24px; }
 .seg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 70vh; overflow: auto; }
 .seg-list button { width: 100%; text-align: left; display: block; border-radius: 10px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); }
 .seg-list button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -398,3 +398,6 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .seg-next-inline { display: flex; justify-content: flex-end; margin: 16px; }
 @media (max-width: 800px) { .seg-overview { grid-template-columns: 1fr; } }
 .canvas-block.dim-block .block-bar { display: flex; }
+
+.note-box { background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; padding: 6px 12px; margin: 8px 0; }
+.note-box p { margin: 6px 0; }

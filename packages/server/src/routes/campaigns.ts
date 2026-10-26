@@ -8,7 +8,7 @@ import {
   campaignStatus,
   hasCapability,
   emptyContent,
-  flatContent,
+  flatContent, defaultEmailName,
   pickVersion,
   versionName,
   normalizeContent,
@@ -325,7 +325,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     const total = (variant ?? content).blocks.length;
     const conditional = (variant ?? content).blocks.some((b) => b.showWhen);
     if (content.variants?.length || conditional) {
-      const base = variant ? versionName(variant) + (variant.kind ? '' : ' version') : 'Default version';
+      const base = variant ? versionName(variant) + (variant.kind ? '' : ' version') : content.versioning?.mode === 'conditions' ? defaultEmailName(content) : 'Default version';
       out.versionLabel = conditional && contact && flat.blocks.length < total ? `${base} · ${flat.blocks.length} of ${total} blocks` : base;
     }
     return who.kind === 'recipient' ? { ...out, recipientLabel: who.label } : out;

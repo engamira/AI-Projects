@@ -23,8 +23,9 @@ export function useDerivedTestContacts(campaignId: string, enabled: boolean, onB
           for (const v of activeLanguageVersions(content, fields)) if (v.values[0]) languages.set(v.values[0].toLowerCase(), v.values[0]);
           const have = new Set(a.test.map((c) => c.code.toLowerCase()));
           const typeOf = (k: string) => a.available.find((f) => f.key === k)?.type;
+          if (!languages.has('en')) languages.set('en', 'en'); // English is the Default email, its rules make segments too
           const { rows } = derivedSegments(content, fields, [...languages.values()], typeOf);
-          const missing = rows.filter((r) => r.fields.length > 1 && r.samples !== null && !have.has(r.code.toLowerCase()));
+          const missing = rows.filter((r) => !r.template && r.fields.length > 1 && r.samples !== null && !have.has(r.code.toLowerCase()));
           const signature = missing.map((r) => r.code).join('|');
           if (missing.length === 0 || signature === tried.current) return;
           tried.current = signature;

@@ -22,6 +22,7 @@ import {
   blocksShownFor,
   describeCondition,
   derivedSegments,
+  defaultEmailName,
   evaluateCondition,
   emptyGroup,
   isGroup,
@@ -366,7 +367,7 @@ function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop
   );
 }
 
-function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: string; revision?: RevisionDto; onClose?: () => void; /** Show the email for this recipient only (no "Preview as" choice, phone view): used for the quick view in the Versions tab. */ fixedAs?: string }) {
+function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: string; revision?: RevisionDto; onClose?: () => void; /** Show the email for this recipient only (no "Preview as" choice): used for the quick view in the Versions tab. */ fixedAs?: string }) {
   const [html, setHtml] = useState('');
   const [text, setText] = useState('');
   const [issues, setIssues] = useState<PlaceholderIssue[]>([]);
@@ -379,7 +380,8 @@ function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: s
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState('');
   // The desktop view starts as wide as the screen allows next to the phone, between 600 and 1024 px.
-  const desktopStart = Math.max(600, Math.min(1024, Math.round((typeof window === 'undefined' ? 1280 : window.innerWidth) - 375 - 24 - 72)));
+  const winWidth = typeof window === 'undefined' ? 1280 : window.innerWidth;
+  const desktopStart = fixedAs ? Math.max(420, Math.min(1024, Math.round(winWidth - 375 - 24 - 72 - 340))) : Math.max(600, Math.min(1024, Math.round(winWidth - 375 - 24 - 72)));
 
   useEffect(() => {
     let live = true;
@@ -404,7 +406,7 @@ function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: s
     <div className="preview-pane">
       <div className="preview-bar">
         <strong>{revision ? `Version ${revision.number}` : 'Current draft'}</strong>
-        {!fixedAs && <span className="muted small">Phone and desktop side by side. Each has its own width.</span>}
+        <span className="muted small">Phone and desktop side by side. Each has its own width.</span>
         {!fixedAs && <label className="small">Preview as{' '}
           <select value={as} onChange={(e) => setAs(e.target.value)}>
             {(recipients?.groups ?? [{ title: 'Built-in examples', recipients: SAMPLE_RECIPIENTS.map((r) => ({ id: r.id, label: r.label })) }]).map((g) => (
@@ -433,7 +435,7 @@ function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: s
       )}
       <div className="preview-devices" style={showText ? { display: "none" } : undefined}>
         <DeviceFrame kind="phone" html={html} widths={PHONE_WIDTHS} initial={375} />
-        {!fixedAs && <DeviceFrame kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={desktopStart} />}
+        <DeviceFrame kind="desktop" html={html} widths={DESKTOP_WIDTHS} initial={desktopStart} />
       </div>
     </div>
   );
@@ -558,20 +560,20 @@ function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; can
   const active = activeVariants(content, audienceFields);
   const languages = activeLanguageVersions(content, audienceFields);
   // segments made by the block rules of each language email: choosing one edits that email and dims the blocks the segment does not see
-  const made = derivedSegments(content, audienceFields, languages.map((v) => v.values[0] ?? ''), typeOf).rows.filter((r) => r.fields.length > 1 && r.samples !== null);
-  if (active.length === 0 && languages.length === 0) {
-    return content.versioning?.mode === 'conditions'
-      ? <div className="version-bar" data-testid="version-bar"><span className="muted small">No language emails yet. Create the email for each language in the Segments tab, then come back to add blocks and choose who sees them.</span></div>
-      : null;
-  }
+  const perLanguage = content.versioning?.mode === 'conditions';
+  const langValues = languages.map((v) => v.values[0] ?? '');
+  if (perLanguage && !langValues.some((l) => l.toLowerCase() === 'en')) langValues.push('en'); // English is the Default email
+  // "Default-ar" (any other case) is the language's email itself, not a segment
+  const made = derivedSegments(content, audienceFields, langValues, typeOf).rows.filter((r) => !r.template && r.fields.length > 1 && r.samples !== null);
+  if (!perLanguage && active.length === 0 && languages.length === 0) return null;
   const current = [...active, ...languages].find((v) => v.id === editing);
   const value = focus ? `seg:${focus.code}` : current?.id ?? '';
   function pick(v: string) {
     if (v.startsWith('seg:')) {
       const r = made.find((x) => `seg:${x.code}` === v);
       const lang = r && languages.find((l) => l.values[0] === r.language);
-      if (!r || !lang) return;
-      setEditing(lang.id);
+      if (!r || (!lang && r.language.toLowerCase() !== 'en')) return;
+      setEditing(lang ? lang.id : null);
       setFocus({ code: r.code, contact: Object.fromEntries(r.fields.map((k, i) => [k, r.samples![i] === '' ? null : r.samples![i]!])) });
     } else setEditing(v || null);
   }
@@ -579,15 +581,15 @@ function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; can
     <div className="version-bar" data-testid="version-bar">
       <label>Editing version{' '}
         <select value={value} onChange={(e) => pick(e.target.value)}>
-          <option value="">Default version</option>
-          {languages.length > 0 && <optgroup label="Language emails">{languages.map((v) => <option key={v.id} value={v.id}>{versionName(v)}</option>)}</optgroup>}
+          <option value="">{perLanguage ? `${defaultEmailName(content)} email` : 'Default version'}</option>
+          {languages.length > 0 && <optgroup label="Language emails">{languages.map((v) => <option key={v.id} value={v.id}>{versionName(v)} email</option>)}</optgroup>}
           {made.length > 0 && <optgroup label="Segments made by rules">{made.map((r) => <option key={r.key} value={`seg:${r.code}`}>{r.code}</option>)}</optgroup>}
           {active.length > 0 && <optgroup label="Segment copies">{active.map((v) => <option key={v.id} value={v.id}>{variantCode(v)} version</option>)}</optgroup>}
         </select>
       </label>
       <span className="muted small">
-        {focus && current ? `You are editing the ${versionName(current)} email, shown the way ${focus.code} sees it: blocks this segment does not see are dimmed. Changes here change the whole language email.`
-          : current ? (current.kind === 'language' ? `You are editing the ${versionName(current)} email. Put every block its segments need here, then choose who sees each block.` : `You are editing the ${variantCode(current)} version. Only contacts in that segment receive it.`) : 'The Default version is sent to contacts in segments without a version of their own.'}
+        {focus ? `You are editing the ${current ? `${versionName(current)} email` : `${defaultEmailName(content)} email`}, shown the way ${focus.code} sees it: blocks this segment does not see are dimmed. Changes here change the whole language email.`
+          : current ? (current.kind === 'language' ? `You are editing the ${versionName(current)} email. Put every block its segments need here, then set rules to choose who sees each block.` : `You are editing the ${variantCode(current)} version. Only contacts in that segment receive it.`) : perLanguage ? `You are editing the ${defaultEmailName(content)} email: the English email, also sent to contacts whose language has no email of its own.` : 'The Default version is sent to contacts in segments without a version of their own.'}
         {current && !canEdit ? ' (view only)' : ''}
       </span>
     </div>
