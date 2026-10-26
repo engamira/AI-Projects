@@ -50,6 +50,10 @@ type EditorState = {
   /** Creates a version for a segment as a copy of the Default (or of another version) and starts editing it. */
   addVariant: (fields: string[], values: (string | number | boolean | null)[], copyFrom: string | null) => string | null;
   removeVariant: (id: string) => void;
+  /** Removes segments everywhere: rule segments are listed as removed, copies written for them are deleted, and mappings to or from them are dropped. */
+  dismissSegments: (ruleSegmentKeys: string[], copyIds: string[], mappedKeys: string[]) => void;
+  /** Brings back every removed rule segment (used when the test audience is built again). */
+  clearDismissed: () => void;
   /** Creates the default email for one language (it holds every block any segment of that language needs). */
   addLanguageVersion: (languageField: string, value: string, copyFrom: string | null) => string | null;
   /** How this campaign builds versions, and which field holds the language. */
@@ -190,6 +194,31 @@ export const useEditor = create<EditorState>((set, get) => {
           return condition ? { ...rest, showWhen: condition } : rest;
         }),
       })), `${editing ?? ''}:${blockId}:showWhen`);
+    },
+
+    dismissSegments: (ruleKeys, copyIds, mappedKeys) => {
+      const { content, editing } = get();
+      const gone = new Set(copyIds);
+      const rest = (content.variants ?? []).filter((v) => !gone.has(v.id));
+      const next = { ...content } as EmailContent;
+      if (rest.length) next.variants = rest; else delete next.variants;
+      const cur = content.versioning;
+      if (cur || ruleKeys.length) {
+        const base = cur ?? { mode: 'conditions' as const };
+        const routes = Object.fromEntries(Object.entries(base.routes ?? {}).filter(([k, target]) => !mappedKeys.includes(k) && !ruleKeys.includes(k) && !gone.has(target)));
+        const removed = [...new Set([...(base.removed ?? []), ...ruleKeys])];
+        const { routes: _r, removed: _d, ...others } = base;
+        next.versioning = { ...others, ...(Object.keys(routes).length ? { routes } : {}), ...(removed.length ? { removed } : {}) };
+      }
+      commit(next);
+      if (editing && gone.has(editing)) set({ editing: null, focus: null, selectedId: null });
+    },
+
+    clearDismissed: () => {
+      const { content } = get();
+      if (!content.versioning?.removed?.length) return;
+      const { removed: _d, ...others } = content.versioning;
+      commit({ ...content, versioning: others });
     },
 
     removeVariant: (id) => {

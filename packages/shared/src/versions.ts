@@ -177,6 +177,7 @@ export function derivedSegments(content: EmailContent, audienceFields: string[],
   const lf = content.versioning?.languageField;
   const rows: DerivedSegment[] = [];
   if (content.versioning?.mode !== 'conditions' || !lf || !audienceFields.includes(lf)) return { rows, tooMany: false };
+  const removed = new Set(content.versioning?.removed ?? []);
   for (const language of languages) {
     const v = languageEmailOf(content, lf, language);
     const atoms = v ? atomsIn(v, [lf], typeOf) : new Map<string, Atom[]>();
@@ -191,6 +192,7 @@ export function derivedSegments(content: EmailContent, audienceFields: string[],
     const combos = lists.reduce<Part[][]>((acc, l) => acc.flatMap((a) => l.map((x) => [...a, x])), [[]]);
     for (const c of combos) {
       const values = [...c.map((p) => p.code), language];
+      if (removed.has(segmentKey([...fields, lf], values))) continue; // removed by the Builder
       rows.push({
         fields: [...fields, lf], values, key: segmentKey([...fields, lf], values), code: [...c.map((p) => p.label), language].join('-'), language,
         template: fields.length > 0 && c.every((p) => p.code === ''),

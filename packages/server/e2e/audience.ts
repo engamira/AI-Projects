@@ -152,6 +152,7 @@ try {
   const made = (await tests.locator('tbody td strong').allInnerTexts()).sort();
   assert(made.join(',') === 'FR-fr,UAE-ar,UAE-en', `adding FR-fr kept UAE-en and UAE-ar and added no other combination (got ${made.join(',')})`);
   assert((await tests.getByText(/\.invalid/).count()) >= 1, 'test contacts use made-up addresses');
+  page.once('dialog', (dlg) => void dlg.accept());
   await page.getByRole('button', { name: 'Remove test contact FR-fr' }).click();
   await tests.locator('td strong', { hasText: 'FR-fr' }).waitFor({ state: 'detached' });
 
@@ -203,6 +204,15 @@ try {
   assert((await page.getByText('set by you').count()) === 0, 'the automatic choice has no "set by you" note');
   ok('a segment can be sent the email of another segment, and put back to the automatic choice');
 
+  // removing the test contact of a segment that has its own version removes the segment and that version
+  page.once('dialog', (dlg) => void dlg.accept());
+  await page.getByTestId('test-audience').getByRole('button', { name: 'Remove test contact UAE-ar' }).click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('td')].some((td) => (td.textContent ?? '').startsWith('UAE-ar'))); // gone from the test audience and the mapping
+  await page.getByRole('tab', { name: 'Email' }).click();
+  assert((await page.getByTestId('version-bar').getByLabel('Editing version').locator('option', { hasText: 'UAE-ar' }).count()) === 0, 'the deleted segment has no version any more');
+  await page.getByRole('tab', { name: 'Segments' }).click();
+  ok('removing a test contact deletes its segment and the version written for it');
+
   // ---- choice 1: one email per language, with show/hide conditions that add segments
   await page.goto(`${BASE}/`);
   await page.getByLabel('Campaign name').fill('Language campaign');
@@ -246,10 +256,20 @@ try {
   await page.getByRole('button', { name: 'Edit the de email' }).waitFor(); // and their language emails
   ok('a language added in the mapping section appears in the test audience');
 
+  // removing a test contact removes its segment everywhere, and it is not rebuilt
+  page.once('dialog', (dlg) => void dlg.accept());
+  await tests2.getByRole('button', { name: 'Remove test contact EG-ar' }).click();
+  await tests2.getByRole('cell', { name: 'EG-ar', exact: true }).waitFor({ state: 'detached' });
+  await page.getByRole('cell', { name: /^EG-ar/ }).waitFor({ state: 'detached' });
+  await page.waitForTimeout(3500); // longer than the pause before missing test contacts are built
+  assert((await page.getByRole('cell', { name: /^EG-ar/ }).count()) === 0, 'the removed segment is not rebuilt');
+  ok('removing a test contact removes its segment from the lists and the mapping');
+
   // the Email tab lists the segments made by rules; choosing one dims the blocks it does not see
   await page.getByRole('tab', { name: 'Email' }).click();
   const editingVersion = page.getByTestId('version-bar').getByLabel('Editing version');
   await editingVersion.locator('option', { hasText: 'UAE-ar' }).waitFor({ state: 'attached' });
+  assert((await editingVersion.locator('option', { hasText: 'EG-ar' }).count()) === 0, 'a removed segment is not in the editing drop-down');
   assert((await editingVersion.locator('option', { hasText: 'Default-ar' }).count()) === 0, 'Default-ar is not in the editing drop-down');
   await editingVersion.selectOption({ label: 'ar email' });
   await editingVersion.selectOption({ label: 'UAE-ar' });

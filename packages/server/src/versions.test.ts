@@ -523,3 +523,16 @@ describe('English always uses the Default email', () => {
     expect(activeLanguageVersions(c, ['language']).map((v) => v.values[0])).toEqual(['ar']);
   });
 });
+
+describe('removed rule segments', () => {
+  it('are not listed once removed, and the others stay', () => {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    c.blocks[0]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is', values: ['UAE, EG'] }] };
+    const all = derivedSegments(c, ['language'], ['en']);
+    expect(all.rows.map((r) => r.code)).toEqual(['UAE-en', 'EG-en', 'SA-en']);
+    c.versioning = { ...c.versioning!, removed: [all.rows[1]!.key] };
+    expect(derivedSegments(c, ['language'], ['en']).rows.map((r) => r.code)).toEqual(['UAE-en', 'SA-en']);
+    expect(validateContent(c).ok).toBe(true);
+  });
+});

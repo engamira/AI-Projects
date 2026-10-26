@@ -44,6 +44,8 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   const addVariant = useEditor((s) => s.addVariant);
   const addLanguageVersion = useEditor((s) => s.addLanguageVersion);
   const removeVariant = useEditor((s) => s.removeVariant);
+  const dismissSegments = useEditor((s) => s.dismissSegments);
+  const clearDismissed = useEditor((s) => s.clearDismissed);
   const setEditing = useEditor((s) => s.setEditing);
 
   const [values, setValues] = useState<Record<string, string>>({});
@@ -60,7 +62,8 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
     setBusy(true);
     try { await fn(); await load(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
-  const keepRoutes = Object.keys(routes).length ? { routes } : {};
+  const removedKeys = content.versioning?.removed;
+  const keepRoutes = { ...(Object.keys(routes).length ? { routes } : {}), ...(removedKeys?.length ? { removed: removedKeys } : {}) };
 
   function confirmFieldChange(next: string[]): boolean {
     const hasVersions = copies.length > 0;
@@ -91,6 +94,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
     const vals = mode === 'conditions' && languageField
       ? { [languageField]: languagesText.split(',').map((s) => s.trim()).filter(Boolean) }
       : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, v.split(',').map((s) => s.trim()).filter(Boolean)]));
+    clearDismissed(); // building again brings removed rule segments back
     const r = await api<TestAudienceResult>('POST', `/api/campaigns/${campaignId}/test-audience`, { mode: m, values: m === 'values' ? vals : undefined });
     setNote(r.added === 0 ? 'Nothing new to add: those combinations are already in the test audience.' : `Built ${r.added} test contact${r.added === 1 ? '' : 's'}${r.alreadyThere ? ` (${r.alreadyThere} already there)` : ''}.`);
     if (m === 'values') { setValues({}); setLanguagesText(''); }
@@ -102,6 +106,37 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
       await api('POST', `/api/campaigns/${campaignId}/test-audience`, { mode: 'values', values: vals });
       await load();
     } catch (e) { setError(errorText(e)); }
+  }
+
+  /** Removing a test contact removes its segment everywhere: the lists, the mapping, Preview as, and a copy written for it. */
+  async function removeTest(c: { id: string; code: string; data: Record<string, unknown> }) {
+    const row = rowList.find((r) => d.testFor(r)?.id === c.id);
+    const language = mode === 'conditions' && languageField ? String(c.data[languageField] ?? '').trim() : '';
+    const languageOnly = !!language && c.code.trim().toLowerCase() === language.toLowerCase();
+    const own = row && mode === 'copies' ? copies.find((v) => v.key === row.key) : undefined;
+    // removing a language's own test contact removes the whole language: its email, its rule segments and their test contacts
+    const emailOfLanguage = languageOnly ? languages.find((v) => v.key === segmentKey([languageField!], [language])) : undefined;
+    const sameLanguage = languageOnly ? test.filter((x) => String(x.data[languageField!] ?? '').trim().toLowerCase() === language.toLowerCase()) : [c];
+    const ruleKeys = languageOnly ? rowList.filter((r) => String(r.values[r.values.length - 1] ?? '').toLowerCase() === language.toLowerCase()).map((r) => r.key) : mode === 'conditions' && row ? [row.key] : [];
+    const parts = [
+      languageOnly && sameLanguage.length > 1 ? `the ${language} segments made by your rules (${sameLanguage.length - 1})` : '',
+      emailOfLanguage ? `the ${language} email` : '',
+      own ? `the ${variantCode(own)} version written for it` : '',
+    ].filter(Boolean);
+    if (!window.confirm(`Remove test contact ${c.code}? Its segment is removed from the segment list, the email mapping and Preview as${parts.length ? `, and so is ${parts.join(', ')}` : ''}.`)) return;
+    await guarded(async () => {
+      for (const x of sameLanguage) await api('DELETE', `/api/campaigns/${campaignId}/test-audience/${x.id}`);
+      dismissSegments(ruleKeys, [own?.id, emailOfLanguage?.id].filter((x): x is string => !!x), row ? [row.key] : []);
+    });
+  }
+  async function removeAllTests() {
+    const ownCopies = mode === 'copies' ? rowList.filter((r) => r.hasTest).flatMap((r) => copies.filter((v) => v.key === r.key)) : [];
+    if (!window.confirm(`Remove every test contact of this campaign? Their segments are removed from the lists, the email mapping and Preview as${ownCopies.length ? `, and the ${ownCopies.length} version${ownCopies.length === 1 ? '' : 's'} written for them are deleted` : ''}.`)) return;
+    await guarded(async () => {
+      await api('DELETE', `/api/campaigns/${campaignId}/test-audience`);
+      const withTest = rowList.filter((r) => r.hasTest);
+      dismissSegments(mode === 'conditions' ? withTest.map((r) => r.key) : [], ownCopies.map((v) => v.id), withTest.map((r) => r.key));
+    });
   }
 
   function created(id: string | null) {
@@ -232,7 +267,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
                   <button type="button" className="primary" disabled={busy || (mode === 'conditions' ? !languagesText.trim() : chosenFields.some((f) => !(values[f.key] ?? '').trim()))} onClick={() => void build('values')}>Build test audience</button>
                 </div>
                 <div style={{ flex: '0 0 auto' }}><button type="button" disabled={busy} onClick={() => void build('sheet')}>Build from my contact list</button></div>
-                {test.length > 0 && <button type="button" disabled={busy} onClick={() => { if (window.confirm('Remove every test contact of this campaign?')) void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience`); }); }}>Remove all</button>}
+                {test.length > 0 && <button type="button" disabled={busy} onClick={() => void removeAllTests()}>Remove all</button>}
               </div>
             </>
           )}
@@ -240,7 +275,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
             <div className="table-scroll" style={{ marginTop: 10 }}>
               <table>
                 <thead><tr><th>Segment</th><th>Test contact</th><th>Made-up address</th><th></th></tr></thead>
-                <tbody>{test.map((c) => <tr key={c.id}><td><strong>{c.code}</strong></td><td>{String(c.data.first_name ?? '')} {String(c.data.last_name ?? '')}</td><td className="muted small">{c.email}</td><td>{canEdit && <button type="button" className="link danger" aria-label={`Remove test contact ${c.code}`} disabled={busy} onClick={() => void guarded(async () => { await api('DELETE', `/api/campaigns/${campaignId}/test-audience/${c.id}`); })}>Remove</button>}</td></tr>)}</tbody>
+                <tbody>{test.map((c) => <tr key={c.id}><td><strong>{c.code}</strong></td><td>{String(c.data.first_name ?? '')} {String(c.data.last_name ?? '')}</td><td className="muted small">{c.email}</td><td>{canEdit && <button type="button" className="link danger" aria-label={`Remove test contact ${c.code}`} disabled={busy} onClick={() => void removeTest(c)}>Remove</button>}</td></tr>)}</tbody>
               </table>
             </div>
           )}

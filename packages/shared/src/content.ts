@@ -53,6 +53,8 @@ export type Versioning = {
   languageField?: string;
   /** Sends one segment the email of another: segment key (see routeKeyFor in versions.ts) -> "default" or the id of a version. Absent: the automatic choice. */
   routes?: Record<string, string>;
+  /** Segments made by block rules that the Builder removed (keys as in routeKeyFor): they are not listed and their test contacts are not rebuilt. */
+  removed?: string[];
 };
 
 export type EmailContent = {
@@ -237,7 +239,7 @@ const envelope = z.object({
     settings: z.record(z.string(), z.unknown()),
     blocks: z.array(blockShape).max(MAX_BLOCKS),
   }).strict()).max(MAX_VARIANTS).optional(),
-  versioning: z.object({ mode: z.enum(['conditions', 'copies']), languageField: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).optional(), routes: z.record(z.string().max(2000), z.string().max(40)).optional() }).strict().optional(),
+  versioning: z.object({ mode: z.enum(['conditions', 'copies']), languageField: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).optional(), routes: z.record(z.string().max(2000), z.string().max(40)).optional(), removed: z.array(z.string().max(2000)).max(2000).optional() }).strict().optional(),
 }).strict();
 
 export type ValidationResult = { ok: true; content: EmailContent } | { ok: false; error: string };
