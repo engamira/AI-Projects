@@ -229,12 +229,12 @@ try {
   await page.getByText('All changes saved').waitFor();
   await page.getByRole('tab', { name: 'Segments' }).click();
   await page.getByRole('heading', { name: 'Segments & Email Mapping' }).waitFor();
-  for (const code of ['UAE-ar', 'SA-ar', 'EG-ar']) await page.getByRole('cell', { name: new RegExp(`^${code}`) }).first().waitFor();
-  assert((await page.getByRole('cell', { name: /^Default-ar/ }).count()) === 0, 'Default-ar is the language email, not a segment');
+  for (const code of ['UAE-ar', 'SA-ar', 'EG-ar', 'FR-ar']) await page.getByRole('cell', { name: new RegExp(`^${code}`) }).first().waitFor();
+  assert((await page.getByRole('cell', { name: /^Default-ar/ }).count()) === 0, 'no Default-ar segment: the control segment is named after a value no rule mentions (FR-ar)');
   await page.getByText('ar email').first().waitFor();
   await page.getByTestId('email-kinds').getByText(/overall Default email is the English email/).waitFor();
   assert((await page.getByRole('cell', { name: /SA, EG/ }).count()) === 0, 'comma separated values make separate segments');
-  await tests2.getByRole('cell', { name: 'EG-ar', exact: true }).waitFor({ timeout: 30000 }); // test contacts for the new segments are made for you
+  await tests2.getByRole('cell', { name: 'FR-ar', exact: true }).waitFor({ timeout: 30000 }); // test contacts for the new segments are made for you
   assert((await tests2.getByRole('cell', { name: 'Default-ar', exact: true }).count()) === 0, 'no Default-ar test contact: "ar" covers it');
   ok('block conditions add segments (UAE-ar, SA-ar, EG-ar from "SA, EG", Default-ar) to the Segments tab and their test contacts are built');
 
@@ -268,7 +268,7 @@ try {
     return { shown: Number(m![1]), total: Number(m![2]) };
   };
   const uae = await shownFor('UAE-ar');
-  const def = await shownFor('ar', /^ar\s/); // the language-only test contact: any other country
+  const def = await shownFor('FR-ar'); // the control segment: a country no rule mentions
   assert(uae.total === def.total && uae.shown === uae.total - 1 && def.shown === def.total - 2, `UAE sees one conditional block, any other country none (got ${uae.shown}/${uae.total} and ${def.shown}/${def.total})`);
   ok('Preview as lists the new segments and hides blocks whose condition they do not meet');
 

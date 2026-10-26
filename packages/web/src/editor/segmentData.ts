@@ -75,8 +75,8 @@ export function useSegmentData(campaignId: string, refreshKey: number) {
     if (!langs.some((l) => isEnglish(l))) langs.push('en');
     const d = derivedSegments(content, chosen, langs, typeOf);
     tooMany = d.tooMany;
-    // the "any other case" of a language (Default-ar) is the language's email itself, not a segment
-    for (const r of d.rows.filter((x) => !x.template)) {
+    // the last value of each rule field is a control: a contact the rules should NOT apply to, to check they work
+    for (const r of d.rows) {
       const at = segs?.segments.find((s) => segmentKey(chosen, s.values) === segmentKey([languageField], [r.language]));
       rowList.push({
         key: r.key, code: r.code, values: r.values.map((x) => x || null), fields: r.fields, samples: r.samples,

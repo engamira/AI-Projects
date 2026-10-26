@@ -85,7 +85,7 @@ export type Atom = { code: string; rule: ConditionRule; /** a made-up value that
 
 export type DerivedSegment = {
   fields: string[]; values: string[]; key: string; code: string; language: string;
-  /** True for "any other case" of a language (for example Default-ar): that is the language's email itself, not a segment. */
+  /** True when every part is a control value (for example SA-ar): the contact the rules should not apply to. */
   template: boolean;
   /** A value to give a made-up test contact for each field ('' = blank), or null when this segment cannot be built (an earlier rule always wins). */
   samples: string[] | null;
@@ -157,7 +157,17 @@ export function atomsIn(version: EmailVersion, exclude: string[] = [], typeOf: T
 }
 
 const MAX_DERIVED = 2000;
-const OTHER_SAMPLES = ['', 'Other', 'x', '0', '1900-01-01'];
+const OTHER_SAMPLES = ['Other', 'x', '0', '1900-01-01', ''];
+
+/**
+ * Example values for the control segment of a field: a value that none of the rules mention, so the rules can be checked
+ * against someone they should NOT apply to (rules about Country UAE and EG get a control contact from SA).
+ */
+const CONTROL_VALUES: Record<string, string[]> = {
+  country: ['SA', 'FR', 'DE', 'US', 'JP', 'IN', 'BR', 'ZA'],
+  city: ['Riyadh', 'Paris', 'Berlin', 'Tokyo', 'Mumbai', 'Lagos'],
+};
+const CONTROL_BY_TYPE: Record<ContactFieldType, string[]> = { text: ['Other'], number: ['0', '1', '7', '99', '1000'], date: ['1990-01-01', '2000-06-01'], boolean: ['yes', 'no'] };
 
 /**
  * Segments made by the block conditions of a language default: one for every combination of the parts its conditions
@@ -171,17 +181,18 @@ export function derivedSegments(content: EmailContent, audienceFields: string[],
     const v = languageEmailOf(content, lf, language);
     const atoms = v ? atomsIn(v, [lf], typeOf) : new Map<string, Atom[]>();
     const fields = [...atoms.keys()];
-    type Part = { code: string; sample: string | null };
+    type Part = { code: string; sample: string | null; label: string };
     const lists: Part[][] = fields.map((f) => {
       const list = atoms.get(f)!;
-      const other = OTHER_SAMPLES.find((s) => bucketOf(list, f, s, typeOf) === '');
-      return [...list.map((a) => ({ code: a.code, sample: a.sample })), ...(other !== undefined ? [{ code: '', sample: other }] : [])];
+      // the control: one more segment whose value none of the rules mention, to check the rules leave it out
+      const other = [...(CONTROL_VALUES[f] ?? []), ...CONTROL_BY_TYPE[typeOf(f) ?? 'text'], ...OTHER_SAMPLES].find((s) => bucketOf(list, f, s, typeOf) === '');
+      return [...list.map((a) => ({ code: a.code, sample: a.sample, label: a.code })), ...(other !== undefined ? [{ code: '', sample: other, label: other || 'Default' }] : [])];
     });
     const combos = lists.reduce<Part[][]>((acc, l) => acc.flatMap((a) => l.map((x) => [...a, x])), [[]]);
     for (const c of combos) {
       const values = [...c.map((p) => p.code), language];
       rows.push({
-        fields: [...fields, lf], values, key: segmentKey([...fields, lf], values), code: values.map((x) => x || 'Default').join('-'), language,
+        fields: [...fields, lf], values, key: segmentKey([...fields, lf], values), code: [...c.map((p) => p.label), language].join('-'), language,
         template: fields.length > 0 && c.every((p) => p.code === ''),
         samples: c.every((p) => p.sample !== null) ? [...c.map((p) => p.sample as string), language] : null,
       });

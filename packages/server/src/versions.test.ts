@@ -385,10 +385,10 @@ describe('segments made by block conditions, and sending one segment the email o
     return { c, en, ar };
   }
 
-  it('lists a segment for each value the conditions mention plus "Default" for any other value', () => {
+  it('lists a segment for each value the conditions mention plus one control segment with a value none of them mention', () => {
     const { c } = campaign();
     const d = derivedSegments(c, ['language'], ['fr', 'ar']);
-    expect(d.rows.map((r) => r.code)).toEqual(['UAE-fr', 'SA-fr', 'Default-fr', 'ar']);
+    expect(d.rows.map((r) => r.code)).toEqual(['UAE-fr', 'SA-fr', 'FR-fr', 'ar']);
     expect(d.tooMany).toBe(false);
     expect(derivedSegments({ ...c, versioning: { mode: 'copies' } }, ['language'], ['fr']).rows).toEqual([]);
   });
@@ -475,7 +475,7 @@ describe('every comparison makes a segment, and several values can be typed in o
     // the parts, per field: country (UAE, SA, has ua, blank), orders (over 10, under 3), since (after 2025-01-01)
     const parts = new Set(d.rows.flatMap((r) => r.values));
     for (const p of ['UAE', 'SA', 'has ua', 'blank', 'over 10', 'under 3', 'after 2025-01-01']) expect(parts.has(p)).toBe(true);
-    expect(d.rows.some((r) => r.code === 'Default-Default-Default-fr')).toBe(true);
+    expect(d.rows.some((r) => r.template && r.code === 'FR-7-1990-01-01-fr')).toBe(true); // the control: a country, an order count and a date that no rule mentions
     for (const r of d.rows) {
       if (!r.samples) continue;
       const contact = Object.fromEntries(r.fields.map((f, i) => [f, r.samples![i] === '' ? null : r.samples![i]]));
@@ -508,7 +508,7 @@ describe('language email names, and English as the Default email', () => {
     c.versioning = { mode: 'conditions', languageField: 'language' };
     c.blocks[0]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is', values: ['UAE'] }] };
     const d = derivedSegments(c, ['language'], ['en']);
-    expect(d.rows.map((r) => [r.code, r.template])).toEqual([['UAE-en', false], ['Default-en', true]]);
+    expect(d.rows.map((r) => [r.code, r.template])).toEqual([['UAE-en', false], ['SA-en', true]]);
     expect(derivedSegments(c, ['language'], ['fr']).rows.map((r) => r.code)).toEqual(['fr']); // French has no email, so no rules of its own
   });
 });

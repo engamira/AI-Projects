@@ -564,8 +564,7 @@ function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; can
   const perLanguage = content.versioning?.mode === 'conditions';
   const langValues = languages.map((v) => v.values[0] ?? '');
   if (perLanguage && !langValues.some((l) => isEnglish(l))) langValues.push('en'); // English is the Default email
-  // "Default-ar" (any other case) is the language's email itself, not a segment
-  const made = derivedSegments(content, audienceFields, langValues, typeOf).rows.filter((r) => !r.template && r.fields.length > 1 && r.samples !== null);
+  const made = derivedSegments(content, audienceFields, langValues, typeOf).rows.filter((r) => r.fields.length > 1 && r.samples !== null);
   if (!perLanguage && active.length === 0 && languages.length === 0) return null;
   const current = [...active, ...languages].find((v) => v.id === editing);
   const value = focus ? `seg:${focus.code}` : current?.id ?? '';

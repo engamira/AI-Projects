@@ -334,7 +334,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
             </table>
           </div>
           {tooMany && <p className="error" role="alert">There are more than 2000 segments, so the list is cut short. Use fewer values in your rules.</p>}
-          {mode === 'conditions' && <p className="muted small">These segments come from the rules on your blocks. Each comparison has a short name: "UAE" (is), "not UAE", "has ua" (contains), "no ua" (does not contain), "over 10" and "under 10" (numbers), "after 2025-01-01" and "before 2025-01-01" (dates), "blank" and "filled". A contact belongs to the first one it meets, and "Default" means none of them, so "Default-en" is English contacts in any other case. Test contacts for these segments are made for you.</p>}
+          {mode === 'conditions' && <p className="muted small">These segments come from the rules on your blocks. Each comparison has a short name: "UAE" (is), "not UAE", "has ua" (contains), "no ua" (does not contain), "over 10" and "under 10" (numbers), "after 2025-01-01" and "before 2025-01-01" (dates), "blank" and "filled". A contact belongs to the first one it meets. For each field with rules one extra control segment is added with a value that no rule mentions (for example SA when the rules are about UAE and EG, or a city that is not in the rules), so you can check that the rules leave it out. Test contacts for all these segments are made for you.</p>}
 
           {mode === 'copies' && canEdit && (
             <>

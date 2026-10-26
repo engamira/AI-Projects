@@ -25,10 +25,9 @@ export function useDerivedTestContacts(campaignId: string, enabled: boolean, onB
           const typeOf = (k: string) => a.available.find((f) => f.key === k)?.type;
           if (!languages.has('en')) languages.set('en', 'en'); // English is the Default email, its rules make segments too
           const { rows } = derivedSegments(content, fields, [...languages.values()], typeOf);
-          const missing = rows.filter((r) => !r.template && r.fields.length > 1 && r.samples !== null && !have.has(r.code.toLowerCase()));
-          // "Default-ar" (any other case) is the language's own email, not a segment: remove its test contact, "ar" covers it
-          const templates = new Set(rows.filter((r) => r.template).map((r) => r.code.toLowerCase()));
-          const stale = a.test.filter((c) => templates.has(c.code.toLowerCase()));
+          const missing = rows.filter((r) => r.fields.length > 1 && r.samples !== null && !have.has(r.code.toLowerCase()));
+          // earlier versions built a "Default-ar" test contact for the any-other-case: it duplicates "ar", remove it
+          const stale = a.test.filter((c) => /^(default-)+[^-]+$/i.test(c.code));
           for (const c of stale) await api('DELETE', `/api/campaigns/${campaignId}/test-audience/${c.id}`);
           if (stale.length) onBuilt();
           const signature = missing.map((r) => r.code).join('|');
