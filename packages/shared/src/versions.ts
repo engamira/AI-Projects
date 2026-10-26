@@ -228,15 +228,12 @@ export function activeLanguageVersions(content: EmailContent, audienceFields: st
 /** Does any block of this version have a show/hide rule? */
 export const hasRules = (v: { blocks: BlockInstance[] }): boolean => v.blocks.some((b) => !!b.showWhen);
 
-/**
- * The name shown for a version: UAE-ar for a segment copy; for a language email "ar default" (every block, no rules) or
- * "ar dynamic" (rules on one or more blocks).
- */
+/** The name shown for a version: UAE-ar for a segment copy; the language itself ("ar") for a language email, which is called "ar email" on screen. */
 export const versionName = (v: Pick<SegmentVersion, 'values' | 'kind'> & { blocks?: BlockInstance[] }): string =>
-  (v.kind === 'language' ? `${v.values[0] || 'blank'} ${v.blocks && hasRules({ blocks: v.blocks }) ? 'dynamic' : 'default'}` : variantCode(v));
+  (v.kind === 'language' ? v.values[0] || 'blank' : variantCode(v));
 
-/** The overall Default email is the English email: "en default" or, with rules on its blocks, "en dynamic". */
-export const defaultEmailName = (content: { blocks: BlockInstance[] }): string => `en ${hasRules(content) ? 'dynamic' : 'default'}`;
+/** The overall Default email is the English email, called "en email" on screen. */
+export const defaultEmailName = (_content?: { blocks: BlockInstance[] }): string => 'en';
 
 /** English always uses the Default email: it never has a language email of its own. */
 export const isEnglish = (language: unknown): boolean => String(language ?? '').trim().toLowerCase() === 'en';

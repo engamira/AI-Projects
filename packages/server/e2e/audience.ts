@@ -215,8 +215,8 @@ try {
   await tests2.getByLabel('Languages', { exact: true }).fill('en, ar');
   await page.getByRole('button', { name: 'Build test audience' }).click();
   await tests2.getByRole('cell', { name: 'ar', exact: true }).waitFor();
-  await page.getByLabel('Create the email for ar').selectOption({ label: 'The en default email' }); // the languages come from the test audience; a copy of the English Default
-  await page.getByTestId('version-bar').getByText('You are editing the ar default').waitFor();
+  await page.getByLabel('Create the email for ar').selectOption({ label: 'The en email' }); // the languages come from the test audience; a copy of the English Default
+  await page.getByTestId('version-bar').getByText('You are editing the ar email').waitFor();
   await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
   await page.getByLabel('Heading', { exact: true }).fill('UAE only');
   await page.getByLabel('Who sees this block').selectOption('some');
@@ -231,7 +231,7 @@ try {
   await page.getByRole('heading', { name: 'Segments & Email Mapping' }).waitFor();
   for (const code of ['UAE-ar', 'SA-ar', 'EG-ar']) await page.getByRole('cell', { name: new RegExp(`^${code}`) }).first().waitFor();
   assert((await page.getByRole('cell', { name: /^Default-ar/ }).count()) === 0, 'Default-ar is the language email, not a segment');
-  await page.getByText('ar dynamic email').first().waitFor(); // rules are set on its blocks
+  await page.getByText('ar email').first().waitFor();
   await page.getByTestId('email-kinds').getByText(/overall Default email is the English email/).waitFor();
   assert((await page.getByRole('cell', { name: /SA, EG/ }).count()) === 0, 'comma separated values make separate segments');
   await tests2.getByRole('cell', { name: 'EG-ar', exact: true }).waitFor({ timeout: 30000 }); // test contacts for the new segments are made for you
@@ -243,7 +243,7 @@ try {
   await page.getByRole('button', { name: 'Create this email' }).click();
   await tests2.getByRole('cell', { name: 'fr', exact: true }).waitFor();
   await tests2.getByRole('cell', { name: 'de', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Edit the de default' }).waitFor(); // and their language emails
+  await page.getByRole('button', { name: 'Edit the de email' }).waitFor(); // and their language emails
   ok('a language added in the mapping section appears in the test audience');
 
   // the Email tab lists the segments made by rules; choosing one dims the blocks it does not see
@@ -251,7 +251,7 @@ try {
   const editingVersion = page.getByTestId('version-bar').getByLabel('Editing version');
   await editingVersion.locator('option', { hasText: 'UAE-ar' }).waitFor({ state: 'attached' });
   assert((await editingVersion.locator('option', { hasText: 'Default-ar' }).count()) === 0, 'Default-ar is not in the editing drop-down');
-  await editingVersion.selectOption({ label: 'ar dynamic email' });
+  await editingVersion.selectOption({ label: 'ar email' });
   await editingVersion.selectOption({ label: 'UAE-ar' });
   await page.getByTestId('hidden-for').first().waitFor();
   assert((await page.getByTestId('hidden-for').first().innerText()).includes('UAE-ar'), 'blocks the segment does not see are marked');
@@ -262,8 +262,8 @@ try {
     const id = await page.getByLabel('Preview as').locator('optgroup[label^="Test audience"] option', { hasText: match }).first().getAttribute('value');
     await page.getByLabel('Preview as').selectOption(id!);
     await page.getByTestId('previewing-as').getByText(`${code} (test contact)`, { exact: true }).waitFor();
-    await page.getByTestId('shown-version').getByText(/ar dynamic/).waitFor();
-    const m = /ar dynamic · (\d+) of (\d+) blocks/.exec(await page.getByTestId('shown-version').innerText());
+    await page.getByTestId('shown-version').getByText(/ar email/).waitFor();
+    const m = /ar email · (\d+) of (\d+) blocks/.exec(await page.getByTestId('shown-version').innerText());
     assert(!!m, `the version label shows block counts for ${code}`);
     return { shown: Number(m![1]), total: Number(m![2]) };
   };
@@ -273,12 +273,12 @@ try {
   ok('Preview as lists the new segments and hides blocks whose condition they do not meet');
 
   await page.getByRole('tab', { name: 'Segments' }).click();
-  await page.getByLabel('Email for SA-ar').selectOption({ label: 'en default email' });
+  await page.getByLabel('Email for SA-ar').selectOption({ label: 'en email' });
   await page.getByText('All changes saved').waitFor();
   await page.getByRole('tab', { name: 'Preview' }).click();
   const saId = await page.getByLabel('Preview as').locator('optgroup[label^="Test audience"] option', { hasText: 'SA-ar' }).first().getAttribute('value');
   await page.getByLabel('Preview as').selectOption(saId!);
-  await page.getByTestId('shown-version').getByText(/en default/).waitFor();
+  await page.getByTestId('shown-version').getByText(/en email/).waitFor();
   await page.getByRole('tab', { name: 'Segments' }).click();
   await page.getByTestId('segments-next').click();
   await page.getByTestId('version-bar').waitFor(); // Next goes to the Email tab

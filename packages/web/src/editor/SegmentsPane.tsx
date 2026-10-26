@@ -261,7 +261,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
             <>
               <h3>The email for each language</h3>
               <div className="note-box" data-testid="email-kinds">
-                <p className="small"><strong>Language default email</strong> (for example "ar default email"): holds all the possible blocks for every segment of the language, with no rules set. <strong>Language dynamic email</strong> (for example "ar dynamic email"): the same email once rules are set against one or more of its blocks, so each segment sees only its blocks.</p>
+                <p className="small"><strong>One email per language</strong> (for example "ar email"), whether or not rules are set on its blocks. Put every block that any segment of the language needs in it, then set rules in the Email tab to choose who sees each block.</p>
                 <p className="small"><strong>The overall Default email is the English email</strong>, called "{defaultEmailName(content)} email". Contacts whose language has no email of its own get it, and English contacts always use it, so English never has an email of its own.</p>
               </div>
               {found.size === 0 && <p className="muted">No languages yet. Build the test audience above, or type a language below.</p>}
@@ -280,8 +280,8 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
                             <td>{l.contacts}</td>
                             <td>{own ? <span className="ok">{versionName(own)} email <span className="muted small">· {own.blocks.length} block{own.blocks.length === 1 ? '' : 's'}</span></span> : english ? <span className="ok">{defaultEmailName(content)} email <span className="muted small">· the Default email</span></span> : null}</td>
                             <td>
-                              {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${l.value} default`} onClick={() => { setEditing(own ? own.id : null); onOpenVersion(); }}>{canEdit ? 'Edit' : 'View'}</button>}
-                              {own && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${l.value} default`} onClick={() => { if (window.confirm(`Delete the email for ${l.value}? Its segments will get the Default email.`)) removeVariant(own.id); }}>Delete</button>}
+                              {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${l.value} email`} onClick={() => { setEditing(own ? own.id : null); onOpenVersion(); }}>{canEdit ? 'Edit' : 'View'}</button>}
+                              {own && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${l.value} email`} onClick={() => { if (window.confirm(`Delete the email for ${l.value}? Its segments will get the Default email.`)) removeVariant(own.id); }}>Delete</button>}
                               {!v && canEdit && (
                                 <select aria-label={`Create the email for ${l.value}`} value="__" onChange={(e) => { if (e.target.value !== '__') createLanguage(l.value, e.target.value); }}>
                                   <option value="__">Create as a copy of…</option>
@@ -353,7 +353,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
             <details>
               <summary>{unused.length} version{unused.length > 1 ? 's' : ''} not used now</summary>
               <p className="muted small">These were made for other segment fields or the other way of building versions. They are kept, and used again if you choose the same settings. Contacts get another email meanwhile.</p>
-              <ul>{unused.map((v) => <li key={v.id}><strong>{versionName(v)}</strong> <span className="muted small">({v.fields.join(', ')})</span> {canEdit && <button type="button" className="link danger" onClick={() => { if (window.confirm('Delete this version?')) removeVariant(v.id); }}>Delete</button>}</li>)}</ul>
+              <ul>{unused.map((v) => <li key={v.id}><strong>{versionName(v)}{v.kind ? ' email' : ' version'}</strong> <span className="muted small">({v.fields.join(', ')})</span> {canEdit && <button type="button" className="link danger" onClick={() => { if (window.confirm('Delete this version?')) removeVariant(v.id); }}>Delete</button>}</li>)}</ul>
             </details>
           )}
         </section>
