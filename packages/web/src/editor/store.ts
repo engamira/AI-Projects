@@ -15,6 +15,7 @@ import {
   type Versioning,
   type PropValue,
   type SaveDraftResponse,
+  isEnglish,
 } from '@cl/shared';
 import { api, ApiError } from '../api';
 
@@ -157,6 +158,7 @@ export const useEditor = create<EditorState>((set, get) => {
     addLanguageVersion: (languageField, value, copyFrom) => {
       const { content } = get();
       if ((content.variants?.length ?? 0) >= MAX_VARIANTS) return null;
+      if (isEnglish(value)) return null; // English always uses the Default email
       const v = newVariant(versionOf(content, copyFrom), [languageField], [value], 'language');
       if (content.variants?.some((x) => x.key === v.key && x.kind === 'language')) return null;
       commit({ ...content, variants: [...(content.variants ?? []), v] });

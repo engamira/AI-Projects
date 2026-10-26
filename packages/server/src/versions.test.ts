@@ -376,7 +376,7 @@ describe('segments made by block conditions, and sending one segment the email o
   function campaign() {
     const c = base();
     c.versioning = { mode: 'conditions', languageField: 'language' };
-    const en = newVariant(c, ['language'], ['en'], 'language');
+    const en = newVariant(c, ['language'], ['fr'], 'language');
     en.blocks = [textBlock('For all'), textBlock('UAE only'), textBlock('SA only')];
     en.blocks[1]!.showWhen = when('country', 'UAE');
     en.blocks[2]!.showWhen = when('country', 'SA');
@@ -387,20 +387,20 @@ describe('segments made by block conditions, and sending one segment the email o
 
   it('lists a segment for each value the conditions mention plus "Default" for any other value', () => {
     const { c } = campaign();
-    const d = derivedSegments(c, ['language'], ['en', 'ar']);
-    expect(d.rows.map((r) => r.code)).toEqual(['UAE-en', 'SA-en', 'Default-en', 'ar']);
+    const d = derivedSegments(c, ['language'], ['fr', 'ar']);
+    expect(d.rows.map((r) => r.code)).toEqual(['UAE-fr', 'SA-fr', 'Default-fr', 'ar']);
     expect(d.tooMany).toBe(false);
-    expect(derivedSegments({ ...c, versioning: { mode: 'copies' } }, ['language'], ['en']).rows).toEqual([]);
+    expect(derivedSegments({ ...c, versioning: { mode: 'copies' } }, ['language'], ['fr']).rows).toEqual([]);
   });
 
   it('a segment can be sent the email of another segment, or the Default; the rest stay automatic', () => {
     const { c, en, ar } = campaign();
-    const sa = { country: 'SA', language: 'en' };
+    const sa = { country: 'SA', language: 'fr' };
     expect(pickVersion(c, ['language'], sa)).toMatchObject({ layer: 'language', variant: { id: en.id } });
     const key = routeKeyFor(c, ['language'], sa);
     c.versioning = { ...c.versioning!, routes: { [key]: ar.id } };
     expect(pickVersion(c, ['language'], sa)).toMatchObject({ layer: 'mapped', variant: { id: ar.id } });
-    expect(pickVersion(c, ['language'], { country: 'UAE', language: 'en' }).layer).toBe('language'); // other segments unchanged
+    expect(pickVersion(c, ['language'], { country: 'UAE', language: 'fr' }).layer).toBe('language'); // other segments unchanged
     c.versioning = { ...c.versioning!, routes: { [key]: 'default' } };
     expect(pickVersion(c, ['language'], sa)).toMatchObject({ layer: 'mapped', variant: null });
     c.versioning = { ...c.versioning!, routes: { [key]: 'not-a-version' } };
@@ -412,20 +412,20 @@ describe('segments made by block conditions, and sending one segment the email o
     await t.db.query('DELETE FROM contact');
     const id = (await builder.post('/api/campaigns', { name: 'Routes', palette: 'travel' })).body.id;
     await builder.put(`/api/campaigns/${id}/audience`, { fields: ['language'] });
-    const made = await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['UAE', 'en'], ['SA', 'en'], ['', 'en']] } });
+    const made = await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['UAE', 'fr'], ['SA', 'fr'], ['', 'fr']] } });
     expect(made.status).toBe(201);
-    expect((made.body.contacts as TestContactDto[]).map((x) => x.code)).toEqual(['Default-en', 'SA-en', 'UAE-en']);
+    expect((made.body.contacts as TestContactDto[]).map((x) => x.code)).toEqual(['Default-fr', 'SA-fr', 'UAE-fr']);
     const tests = made.body.contacts as TestContactDto[];
-    expect(tests.find((x) => x.code === 'Default-en')!.data.country).toBeNull();
+    expect(tests.find((x) => x.code === 'Default-fr')!.data.country).toBeNull();
 
     const { c, en } = campaign();
-    const sa = tests.find((x) => x.code === 'SA-en')!;
+    const sa = tests.find((x) => x.code === 'SA-fr')!;
     c.versioning = { ...c.versioning!, routes: { [routeKeyFor(c, ['language'], sa.data)]: 'default' } };
     expect((await builder.put(`/api/campaigns/${id}/draft`, { content: c, baseVersion: 1 })).status).toBe(200);
     const asSa = (await builder.get(`/api/campaigns/${id}/preview?as=test:${sa.id}`)).body;
     expect(asSa.versionLabel).toBe('en default');
-    const asUae = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'UAE-en')!.id}`)).body;
-    expect(asUae.versionLabel).toBe('en dynamic · 2 of 3 blocks');
+    const asUae = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'UAE-fr')!.id}`)).body;
+    expect(asUae.versionLabel).toBe('fr dynamic · 2 of 3 blocks');
     expect(asUae.html).toContain('UAE only');
     expect(asUae.html).not.toContain('SA only');
     expect(en.blocks.length).toBe(3);
@@ -434,8 +434,8 @@ describe('segments made by block conditions, and sending one segment the email o
     const tamper = JSON.parse(JSON.stringify(c)) as EmailContent;
     delete tamper.versioning!.routes;
     expect((await admin.put(`/api/campaigns/${id}/draft`, { content: tamper, baseVersion: v })).status).toBe(403);
-    expect((await qa.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['EG', 'en']] } })).status).toBe(403);
-    expect((await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['email', 'language'], rows: [['a', 'en']] } })).status).toBe(400);
+    expect((await qa.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['EG', 'fr']] } })).status).toBe(403);
+    expect((await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['email', 'language'], rows: [['a', 'fr']] } })).status).toBe(400);
     expect((await builder.post(`/api/campaigns/${id}/test-audience`, { mode: 'combos', combos: { fields: ['country', 'language'], rows: [['EG']] } })).status).toBe(400);
   });
 });
@@ -446,7 +446,7 @@ describe('every comparison makes a segment, and several values can be typed in o
   function campaign() {
     const c = base();
     c.versioning = { mode: 'conditions', languageField: 'language' };
-    const en = newVariant(c, ['language'], ['en'], 'language');
+    const en = newVariant(c, ['language'], ['fr'], 'language');
     en.blocks = [textBlock('a'), textBlock('b'), textBlock('c'), textBlock('d'), textBlock('e'), textBlock('f')];
     en.blocks[0]!.showWhen = rule('country', 'is', 'UAE, SA'); // typed in one box
     en.blocks[1]!.showWhen = rule('country', 'contains', 'ua');
@@ -470,12 +470,12 @@ describe('every comparison makes a segment, and several values can be typed in o
 
   it('lists a short-named segment for each comparison, and each has a test value that really falls into it', () => {
     const { c } = campaign();
-    const d = derivedSegments(c, ['language'], ['en'], types);
+    const d = derivedSegments(c, ['language'], ['fr'], types);
     expect(d.rows.length).toBeGreaterThan(5);
     // the parts, per field: country (UAE, SA, has ua, blank), orders (over 10, under 3), since (after 2025-01-01)
     const parts = new Set(d.rows.flatMap((r) => r.values));
     for (const p of ['UAE', 'SA', 'has ua', 'blank', 'over 10', 'under 3', 'after 2025-01-01']) expect(parts.has(p)).toBe(true);
-    expect(d.rows.some((r) => r.code === 'Default-Default-Default-en')).toBe(true);
+    expect(d.rows.some((r) => r.code === 'Default-Default-Default-fr')).toBe(true);
     for (const r of d.rows) {
       if (!r.samples) continue;
       const contact = Object.fromEntries(r.fields.map((f, i) => [f, r.samples![i] === '' ? null : r.samples![i]]));
@@ -485,7 +485,7 @@ describe('every comparison makes a segment, and several values can be typed in o
 
   it('a contact belongs to the first part it meets; plain values come before contains', () => {
     const { c } = campaign();
-    const k = (country: string) => JSON.parse(routeKeyFor(c, ['language'], { country, orders: 1, since: null, language: 'en' }, types)) as [string[], string[]];
+    const k = (country: string) => JSON.parse(routeKeyFor(c, ['language'], { country, orders: 1, since: null, language: 'fr' }, types)) as [string[], string[]];
     expect(k('UAE')[1][0]).toBe('uae'); // meets "is UAE" and "contains ua": the plain value wins
     expect(k('Guam')[1][0]).toBe('has ua'); // only "contains ua"
     expect(k('Egypt')[1][0]).toBe(''); // none: Default
@@ -512,5 +512,16 @@ describe('language email names, and English as the Default email', () => {
     const d = derivedSegments(c, ['language'], ['en']);
     expect(d.rows.map((r) => [r.code, r.template])).toEqual([['UAE-en', false], ['Default-en', true]]);
     expect(derivedSegments(c, ['language'], ['fr']).rows.map((r) => r.code)).toEqual(['fr']); // French has no email, so no rules of its own
+  });
+});
+
+describe('English always uses the Default email', () => {
+  it('ignores any English language email, in picking, in the list of language emails and in new versions', () => {
+    const c = base();
+    c.versioning = { mode: 'conditions', languageField: 'language' };
+    c.variants = [newVariant(c, ['language'], ['en'], 'language'), newVariant(c, ['language'], ['ar'], 'language')];
+    expect(pickVersion(c, ['language'], { language: 'EN' })).toMatchObject({ layer: 'default', variant: null });
+    expect(pickVersion(c, ['language'], { language: 'ar' }).layer).toBe('language');
+    expect(activeLanguageVersions(c, ['language']).map((v) => v.values[0])).toEqual(['ar']);
   });
 });

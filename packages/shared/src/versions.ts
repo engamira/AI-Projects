@@ -66,7 +66,7 @@ export function pickVersion(content: EmailContent, audienceFields: string[], con
   const lf = content.versioning?.languageField;
   if (content.versioning?.mode === 'conditions' && lf && audienceFields.includes(lf)) {
     const lkey = segmentKey([lf], [contact[lf]]);
-    const lang = list.find((v) => v.kind === 'language' && v.key === lkey && v.fields.join(',') === lf);
+    const lang = isEnglish(contact[lf]) ? undefined : list.find((v) => v.kind === 'language' && v.key === lkey && v.fields.join(',') === lf);
     if (lang) return { variant: lang, layer: 'language' };
   }
   return { variant: null, layer: 'default' };
@@ -222,7 +222,7 @@ export function activeVariants(content: EmailContent, audienceFields: string[]):
 export function activeLanguageVersions(content: EmailContent, audienceFields: string[]): SegmentVersion[] {
   const lf = content.versioning?.languageField;
   if (content.versioning?.mode !== 'conditions' || !lf || !audienceFields.includes(lf)) return [];
-  return (content.variants ?? []).filter((v) => v.kind === 'language' && v.fields.join(',') === lf);
+  return (content.variants ?? []).filter((v) => v.kind === 'language' && v.fields.join(',') === lf && !isEnglish(v.values[0]));
 }
 
 /** Does any block of this version have a show/hide rule? */
@@ -238,10 +238,12 @@ export const versionName = (v: Pick<SegmentVersion, 'values' | 'kind'> & { block
 /** The overall Default email is the English email: "en default" or, with rules on its blocks, "en dynamic". */
 export const defaultEmailName = (content: { blocks: BlockInstance[] }): string => `en ${hasRules(content) ? 'dynamic' : 'default'}`;
 
-/** The email of one language: its own language email, or for English the Default email itself. */
+/** English always uses the Default email: it never has a language email of its own. */
+export const isEnglish = (language: unknown): boolean => String(language ?? '').trim().toLowerCase() === 'en';
+
+/** The email of one language: its own language email, or for English the Default email itself (always). */
 export function languageEmailOf(content: EmailContent, languageField: string, language: string): EmailVersion | undefined {
+  if (isEnglish(language)) return content;
   const key = segmentKey([languageField], [language]);
-  const own = (content.variants ?? []).find((x) => x.kind === 'language' && x.key === key && x.fields.join(',') === languageField);
-  if (own) return own;
-  return language.trim().toLowerCase() === 'en' ? content : undefined;
+  return (content.variants ?? []).find((x) => x.kind === 'language' && x.key === key && x.fields.join(',') === languageField);
 }

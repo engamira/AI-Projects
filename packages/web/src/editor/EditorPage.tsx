@@ -22,6 +22,7 @@ import {
   blocksShownFor,
   describeCondition,
   derivedSegments,
+  isEnglish,
   defaultEmailName,
   evaluateCondition,
   emptyGroup,
@@ -562,7 +563,7 @@ function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; can
   // segments made by the block rules of each language email: choosing one edits that email and dims the blocks the segment does not see
   const perLanguage = content.versioning?.mode === 'conditions';
   const langValues = languages.map((v) => v.values[0] ?? '');
-  if (perLanguage && !langValues.some((l) => l.toLowerCase() === 'en')) langValues.push('en'); // English is the Default email
+  if (perLanguage && !langValues.some((l) => isEnglish(l))) langValues.push('en'); // English is the Default email
   // "Default-ar" (any other case) is the language's email itself, not a segment
   const made = derivedSegments(content, audienceFields, langValues, typeOf).rows.filter((r) => !r.template && r.fields.length > 1 && r.samples !== null);
   if (!perLanguage && active.length === 0 && languages.length === 0) return null;

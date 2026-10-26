@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { defaultEmailName, languageEmailOf, parseCell, variantCode, versionName, segmentKey, type TestAudienceResult } from '@cl/shared';
+import { defaultEmailName, isEnglish, languageEmailOf, parseCell, variantCode, versionName, segmentKey, type TestAudienceResult } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
 import { SegmentFieldPicker } from '../components/SegmentFieldPicker';
@@ -111,8 +111,10 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   function createCopy(vals: Cell[]) { setError(''); created(addVariant(chosen, vals, copyFrom || null)); }
   function createLanguage(value: string, from: string = copyFrom) { setError(''); if (languageField) created(addLanguageVersion(languageField, value, from || null)); }
   async function createTypedLanguage() {
-    const names = typedLanguage.split(',').map((s) => s.trim()).filter(Boolean); // several languages may be typed, separated by commas
-    if (names.length === 0 || !languageField) return;
+    const typedNames = typedLanguage.split(',').map((s) => s.trim()).filter(Boolean); // several languages may be typed, separated by commas
+    const names = typedNames.filter((n) => !isEnglish(n)); // English always uses the Default email
+    if (!languageField) return;
+    if (names.length === 0) { if (typedNames.length) { setError('English always uses the Default email, so it needs no email of its own.'); setTypedLanguage(''); } return; }
     setError('');
     setBusy(true);
     try {
@@ -260,7 +262,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
               <h3>The email for each language</h3>
               <div className="note-box" data-testid="email-kinds">
                 <p className="small"><strong>Language default email</strong> (for example "ar default email"): holds all the possible blocks for every segment of the language, with no rules set. <strong>Language dynamic email</strong> (for example "ar dynamic email"): the same email once rules are set against one or more of its blocks, so each segment sees only its blocks.</p>
-                <p className="small"><strong>The overall Default email is the English email</strong>, called "{defaultEmailName(content)} email". Contacts whose language has no email of its own get it, and English contacts use it, so English needs no email of its own.</p>
+                <p className="small"><strong>The overall Default email is the English email</strong>, called "{defaultEmailName(content)} email". Contacts whose language has no email of its own get it, and English contacts always use it, so English never has an email of its own.</p>
               </div>
               {found.size === 0 && <p className="muted">No languages yet. Build the test audience above, or type a language below.</p>}
               {found.size > 0 && (
@@ -270,13 +272,13 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
                     <tbody>
                       {[...found.entries()].map(([k, l]) => {
                         const own = languages.find((x) => x.key === segmentKey([languageField], [l.value]));
-                        const isEnglish = !own && l.value.toLowerCase() === 'en';
-                        const v = own ?? (isEnglish ? content : undefined);
+                        const english = isEnglish(l.value);
+                        const v = own ?? (english ? content : undefined);
                         return (
                           <tr key={k}>
                             <td><strong>{l.value}</strong></td>
                             <td>{l.contacts}</td>
-                            <td>{own ? <span className="ok">{versionName(own)} email <span className="muted small">· {own.blocks.length} block{own.blocks.length === 1 ? '' : 's'}</span></span> : isEnglish ? <span className="ok">{defaultEmailName(content)} email <span className="muted small">· the Default email</span></span> : null}</td>
+                            <td>{own ? <span className="ok">{versionName(own)} email <span className="muted small">· {own.blocks.length} block{own.blocks.length === 1 ? '' : 's'}</span></span> : english ? <span className="ok">{defaultEmailName(content)} email <span className="muted small">· the Default email</span></span> : null}</td>
                             <td>
                               {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${l.value} default`} onClick={() => { setEditing(own ? own.id : null); onOpenVersion(); }}>{canEdit ? 'Edit' : 'View'}</button>}
                               {own && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${l.value} default`} onClick={() => { if (window.confirm(`Delete the email for ${l.value}? Its segments will get the Default email.`)) removeVariant(own.id); }}>Delete</button>}

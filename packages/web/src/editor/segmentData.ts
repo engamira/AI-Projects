@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   activeLanguageVersions, activeVariants, blocksShownFor, defaultEmailName, derivedSegments, pickVersion, routeKeyFor, segmentCode, segmentKey, versionName,
   type ContactField, type EmailContent, type SegmentVersion, type SegmentsResponse, type TestContactDto,
+  isEnglish,
 } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
@@ -71,7 +72,7 @@ export function useSegmentData(campaignId: string, refreshKey: number) {
   if (mode === 'conditions' && languageField) {
     // English is the Default email, so its rules make segments too
     const langs = [...found.values()].map((l) => l.value);
-    if (!langs.some((l) => l.toLowerCase() === 'en')) langs.push('en');
+    if (!langs.some((l) => isEnglish(l))) langs.push('en');
     const d = derivedSegments(content, chosen, langs, typeOf);
     tooMany = d.tooMany;
     // the "any other case" of a language (Default-ar) is the language's email itself, not a segment
