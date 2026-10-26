@@ -297,7 +297,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
               <h3>The email for each language</h3>
               <div className="note-box" data-testid="email-kinds">
                 <p className="small"><strong>One email per language</strong> (for example "ar email"), whether or not rules are set on its blocks. Put every block that any segment of the language needs in it, then set rules in the Email tab to choose who sees each block.</p>
-                <p className="small"><strong>The overall Default email is the English email</strong>, called "{defaultEmailName(content)} email". Contacts whose language has no email of its own get it, and English contacts always use it, so English never has an email of its own.</p>
+                <p className="small"><strong>The Default email</strong> is the first email you create, in English. It is what English contacts, "Everyone else" and any language without an email of its own receive, so English never has an email of its own.</p>
               </div>
               {found.size === 0 && <p className="muted">No languages yet. Build the test audience above, or type a language below.</p>}
               {found.size > 0 && (
@@ -313,7 +313,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
                           <tr key={k}>
                             <td><strong>{l.value}</strong></td>
                             <td>{l.contacts}</td>
-                            <td>{own ? <span className="ok">{versionName(own)} email <span className="muted small">· {own.blocks.length} block{own.blocks.length === 1 ? '' : 's'}</span></span> : english ? <span className="ok">{defaultEmailName(content)} email <span className="muted small">· the Default email</span></span> : null}</td>
+                            <td>{own ? <span className="ok">{versionName(own)} email <span className="muted small">· {own.blocks.length} block{own.blocks.length === 1 ? '' : 's'}</span></span> : english ? <span className="ok">{defaultEmailName(content)} email <span className="muted small">· first email, in English</span></span> : null}</td>
                             <td>
                               {v && <button type="button" className="link" aria-label={`${canEdit ? 'Edit' : 'View'} the ${l.value} email`} onClick={() => { setEditing(own ? own.id : null); onOpenVersion(); }}>{canEdit ? 'Edit' : 'View'}</button>}
                               {own && canEdit && <button type="button" className="link danger" aria-label={`Delete the ${l.value} email`} onClick={() => { if (window.confirm(`Delete the email for ${l.value}? Its segments will get the Default email.`)) removeVariant(own.id); }}>Delete</button>}
@@ -346,7 +346,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
             <table>
               <thead><tr><th>Segment</th><th>Contacts</th><th>Email it receives</th>{mode === 'copies' && <th></th>}</tr></thead>
               <tbody>
-                <tr><td><strong>Everyone else</strong></td><td className="muted small">no segment</td><td>{mode === 'conditions' ? `${defaultEmailName(content)} email` : 'Default email'}</td>{mode === 'copies' && <td><button type="button" className="link" onClick={() => { setEditing(null); onOpenVersion(); }}>Edit</button></td>}</tr>
+                <tr><td><strong>Everyone else</strong></td><td className="muted small">no segment, or a language without an email</td><td>{mode === 'conditions' ? `${defaultEmailName(content)} email` : 'Default email'}</td>{mode === 'copies' && <td><button type="button" className="link" onClick={() => { setEditing(null); onOpenVersion(); }}>Edit</button></td>}</tr>
                 {rowList.map((r) => {
                   const own = mode === 'copies' ? copies.find((v) => v.key === r.key) : undefined;
                   const code = own ? variantCode(own) : r.code;

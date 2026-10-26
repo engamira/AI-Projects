@@ -225,7 +225,7 @@ try {
   await tests2.getByLabel('Languages', { exact: true }).fill('en, ar');
   await page.getByRole('button', { name: 'Build test audience' }).click();
   await tests2.getByRole('cell', { name: 'ar', exact: true }).waitFor();
-  await page.getByLabel('Create the email for ar').selectOption({ label: 'The en email' }); // the languages come from the test audience; a copy of the English Default
+  await page.getByLabel('Create the email for ar').selectOption({ label: 'The Default email' }); // the languages come from the test audience; a copy of the English Default
   await page.getByTestId('version-bar').getByText('You are editing the ar email').waitFor();
   await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
   await page.getByLabel('Heading', { exact: true }).fill('UAE only');
@@ -242,7 +242,7 @@ try {
   for (const code of ['UAE-ar', 'SA-ar', 'EG-ar', 'FR-ar']) await page.getByRole('cell', { name: new RegExp(`^${code}`) }).first().waitFor();
   assert((await page.getByRole('cell', { name: /^Default-ar/ }).count()) === 0, 'no Default-ar segment: the control segment is named after a value no rule mentions (FR-ar)');
   await page.getByText('ar email').first().waitFor();
-  await page.getByTestId('email-kinds').getByText(/overall Default email is the English email/).waitFor();
+  await page.getByTestId('email-kinds').getByText(/first email you create, in English/).waitFor();
   assert((await page.getByRole('cell', { name: /SA, EG/ }).count()) === 0, 'comma separated values make separate segments');
   await tests2.getByRole('cell', { name: 'FR-ar', exact: true }).waitFor({ timeout: 30000 }); // test contacts for the new segments are made for you
   assert((await tests2.getByRole('cell', { name: 'Default-ar', exact: true }).count()) === 0, 'no Default-ar test contact: "ar" covers it');
@@ -293,12 +293,12 @@ try {
   ok('Preview as lists the new segments and hides blocks whose condition they do not meet');
 
   await page.getByRole('tab', { name: 'Segments' }).click();
-  await page.getByLabel('Email for SA-ar').selectOption({ label: 'en email' });
+  await page.getByLabel('Email for SA-ar').selectOption({ label: 'Default email' });
   await page.getByText('All changes saved').waitFor();
   await page.getByRole('tab', { name: 'Preview' }).click();
   const saId = await page.getByLabel('Preview as').locator('optgroup[label^="Test audience"] option', { hasText: 'SA-ar' }).first().getAttribute('value');
   await page.getByLabel('Preview as').selectOption(saId!);
-  await page.getByTestId('shown-version').getByText(/en email/).waitFor();
+  await page.getByTestId('shown-version').getByText(/Default email/).waitFor();
   await page.getByRole('tab', { name: 'Segments' }).click();
   await page.getByTestId('segments-next').click();
   await page.getByTestId('version-bar').waitFor(); // Next goes to the Email tab

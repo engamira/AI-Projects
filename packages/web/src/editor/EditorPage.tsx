@@ -589,7 +589,7 @@ function VersionBar({ audienceFields, canEdit }: { audienceFields: string[]; can
       </label>
       <span className="muted small">
         {focus ? `You are editing the ${current ? `${versionName(current)} email` : `${defaultEmailName(content)} email`}, shown the way ${focus.code} sees it: blocks this segment does not see are dimmed. Changes here change the whole language email.`
-          : current ? (current.kind === 'language' ? `You are editing the ${versionName(current)} email. Put every block its segments need here, then set rules to choose who sees each block.` : `You are editing the ${variantCode(current)} version. Only contacts in that segment receive it.`) : perLanguage ? `You are editing the ${defaultEmailName(content)} email: the English email, also sent to contacts whose language has no email of its own.` : 'The Default version is sent to contacts in segments without a version of their own.'}
+          : current ? (current.kind === 'language' ? `You are editing the ${versionName(current)} email. Put every block its segments need here, then set rules to choose who sees each block.` : `You are editing the ${variantCode(current)} version. Only contacts in that segment receive it.`) : perLanguage ? `You are editing the ${defaultEmailName(content)} email: the first email, in English. English contacts, "Everyone else" and contacts whose language has no email of its own receive it.` : 'The Default version is sent to contacts in segments without a version of their own.'}
         {current && !canEdit ? ' (view only)' : ''}
       </span>
     </div>

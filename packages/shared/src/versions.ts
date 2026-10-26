@@ -245,8 +245,8 @@ export const hasRules = (v: { blocks: BlockInstance[] }): boolean => v.blocks.so
 export const versionName = (v: Pick<SegmentVersion, 'values' | 'kind'> & { blocks?: BlockInstance[] }): string =>
   (v.kind === 'language' ? v.values[0] || 'blank' : variantCode(v));
 
-/** The overall Default email is the English email, called "en email" on screen. */
-export const defaultEmailName = (_content?: { blocks: BlockInstance[] }): string => 'en';
+/** The overall Default email is the first email created, in English; it is called "Default email" on screen. */
+export const defaultEmailName = (_content?: { blocks: BlockInstance[] }): string => 'Default';
 
 /** English always uses the Default email: it never has a language email of its own. */
 export const isEnglish = (language: unknown): boolean => String(language ?? '').trim().toLowerCase() === 'en';

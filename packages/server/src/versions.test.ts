@@ -423,7 +423,7 @@ describe('segments made by block conditions, and sending one segment the email o
     c.versioning = { ...c.versioning!, routes: { [routeKeyFor(c, ['language'], sa.data)]: 'default' } };
     expect((await builder.put(`/api/campaigns/${id}/draft`, { content: c, baseVersion: 1 })).status).toBe(200);
     const asSa = (await builder.get(`/api/campaigns/${id}/preview?as=test:${sa.id}`)).body;
-    expect(asSa.versionLabel).toBe('en email');
+    expect(asSa.versionLabel).toBe('Default email');
     const asUae = (await builder.get(`/api/campaigns/${id}/preview?as=test:${tests.find((x) => x.code === 'UAE-fr')!.id}`)).body;
     expect(asUae.versionLabel).toBe('fr email · 2 of 3 blocks');
     expect(asUae.html).toContain('UAE only');
@@ -500,7 +500,7 @@ describe('language email names, and English as the Default email', () => {
     expect(versionName(ar)).toBe('ar');
     ar.blocks[0]!.showWhen = { match: 'all', rules: [{ field: 'country', op: 'is', values: ['UAE'] }] };
     expect(versionName(ar)).toBe('ar');
-    expect(defaultEmailName(c)).toBe('en');
+    expect(defaultEmailName(c)).toBe('Default');
   });
 
   it('the "any other case" of a language is marked as the language email itself, and English uses the Default email\'s rules', () => {
