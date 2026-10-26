@@ -235,6 +235,7 @@ try {
   await page.getByTestId('email-kinds').getByText(/overall Default email is the English email/).waitFor();
   assert((await page.getByRole('cell', { name: /SA, EG/ }).count()) === 0, 'comma separated values make separate segments');
   await tests2.getByRole('cell', { name: 'EG-ar', exact: true }).waitFor({ timeout: 30000 }); // test contacts for the new segments are made for you
+  assert((await tests2.getByRole('cell', { name: 'Default-ar', exact: true }).count()) === 0, 'no Default-ar test contact: "ar" covers it');
   ok('block conditions add segments (UAE-ar, SA-ar, EG-ar from "SA, EG", Default-ar) to the Segments tab and their test contacts are built');
 
   // a language added in "Which email each segment receives" also gets its test contact
