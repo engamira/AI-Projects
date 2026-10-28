@@ -161,7 +161,11 @@ export type RevisionDto = {
   hash: string;
   restoredFromNumber: number | null;
 };
+/** Why one block is shown or hidden for the previewed recipient. */
+export type BlockExplanationDto = { id: string; type: string; label: string; visible: boolean; summary: string; reasons: { ruleId: string; effect: 'show' | 'hide'; met: boolean; text: string }[] };
 export type PreviewResponse = { html: string; text: string; warnings: string[]; placeholderIssues: PlaceholderIssue[]; recipientLabel?: string;
+  /** For a language email: one entry per block with the reason it is shown or hidden. */
+  blocks?: BlockExplanationDto[];
   /** Which version of the email is shown, when the campaign has versions for segments. */
   versionLabel?: string;
 };

@@ -50,7 +50,13 @@ export const emailName = (language: Pick<LanguageDto, 'name'>): string => `${lan
 
 // ---- DTOs of the language emails ----
 
-export type EmailRevisionSummary = { id: string; number: number; kind: string; label: string | null; createdByName: string | null; createdAt: string; hash: string };
+export type EmailRevisionSummary = {
+  id: string; number: number; kind: string; label: string | null; createdByName: string | null; createdAt: string; hash: string;
+  /** State of the latest QA submission of this revision, or null when it was never sent to QA. */
+  qaStatus: 'started' | 'sent_for_corrections' | 'retest' | 'approved' | 'withdrawn' | null;
+};
+export type EmailRevisionDetail = EmailRevisionSummary & { content: unknown };
+export type QaSubmissionResult = { id: string; revisionId: string; revisionNumber: number; state: string; /** The draft has changes that are not in the revision that was sent. */ draftDiffers: boolean; existing: boolean };
 
 export type EmailVariantSummary = {
   id: string;

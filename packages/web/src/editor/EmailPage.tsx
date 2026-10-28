@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { campaignStatus, type CampaignDto, type CampaignEmails, type ContactField, type DerivedResponse, type EmailDraftDto, type EmailRevisionSummary, type TestAudienceDto } from '@cl/shared';
+import { SAMPLE_RECIPIENTS, campaignStatus, type CampaignDto, type CampaignEmails, type ContactField, type DerivedResponse, type EmailDraftDto, type EmailRevisionDetail, type EmailRevisionSummary, type PreviewResponse, type QaSubmissionResult, type TestAudienceDto, type EmailContent } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
-import { AudienceCtx, EditorGrid, EditorPage, useAutosave } from './EditorPage';
+import { AudienceCtx, DESKTOP_WIDTHS, DeviceFrame, EditorGrid, EditorPage, PHONE_WIDTHS, useAutosave } from './EditorPage';
+import { diffRevisions } from './revisionDiff';
 import { flushSave, useEditor } from './store';
 
 // An email made with the language model: Segments (languages and their emails) and Emails (the editor of one language email).
@@ -14,8 +15,8 @@ const TABS: { id: TabId; label: string; ready: boolean }[] = [
   { id: 'segments', label: 'Segments', ready: true },
   { id: 'emails', label: 'Emails', ready: true },
   { id: 'audiences', label: 'Audiences', ready: true },
-  { id: 'preview', label: 'Preview', ready: false },
-  { id: 'versions', label: 'Versions', ready: false },
+  { id: 'preview', label: 'Preview', ready: true },
+  { id: 'versions', label: 'Versions', ready: true },
   { id: 'qa', label: 'QA', ready: false },
   { id: 'check', label: 'Builder to Check', ready: false },
 ];
@@ -51,7 +52,10 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
   const tab = (params.get('tab') as TabId | null) ?? (emails ? (firstWithEmail ? 'emails' : 'segments') : 'segments');
   const lang = params.get('lang') ?? firstWithEmail?.id ?? 'en';
   // leaving the editor saves first, so the segments and audiences the rules make are up to date when the next tab opens
-  const go = (t: TabId, l?: string) => { void flushSave().finally(() => setParams({ tab: t, ...(l ? { lang: l } : {}) }, { replace: false })); };
+  const go = (t: TabId, l?: string, extra: Record<string, string> = {}) => {
+    const keepLang = t === 'emails' || t === 'preview' || t === 'versions' || !!l;
+    void flushSave().finally(() => setParams({ tab: t, ...(keepLang ? { lang: l ?? lang } : {}), ...extra }, { replace: false }));
+  };
 
   async function rename() {
     const n = name.trim();
@@ -68,7 +72,7 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
           <span className={`badge status-${campaignStatus(campaign.status).tone}`} title={campaignStatus(campaign.status).hint}>{campaignStatus(campaign.status).label}</span>
           <div role="tablist" className="tabs">
             {TABS.map((t) => (
-              <button key={t.id} role="tab" aria-selected={tab === t.id} disabled={!t.ready} title={t.ready ? undefined : 'Coming in a later phase'} className={tab === t.id ? 'active' : ''} onClick={() => go(t.id, t.id === 'emails' ? lang : undefined)}>
+              <button key={t.id} role="tab" aria-selected={tab === t.id} disabled={!t.ready} title={t.ready ? undefined : 'Coming in a later phase'} className={tab === t.id ? 'active' : ''} onClick={() => go(t.id)}>
                 {t.label}
               </button>
             ))}
@@ -76,7 +80,9 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
         </div>
         {error && <p className="error" role="alert" style={{ margin: '8px 16px' }}>{error}</p>}
         {tab === 'segments' && emails && <div className="tab-body"><SegmentsTab campaignId={campaign.id} emails={emails} canEdit={canEdit} refresh={refresh} onOpen={(l) => go('emails', l)} /></div>}
-        {tab === 'audiences' && emails && <div className="tab-body"><AudiencesTab campaignId={campaign.id} emails={emails} fields={fields} onEmails={() => go('emails')} /></div>}
+        {tab === 'preview' && emails && <div className="tab-body"><PreviewTab campaignId={campaign.id} emails={emails} lang={lang} aud={params.get('aud')} rev={params.get('rev')} go={go} /></div>}
+        {tab === 'versions' && emails && <div className="tab-body"><VersionsTab emails={emails} lang={lang} canEdit={canEdit} canSubmit={can('campaign.submit') && campaign.status === 'draft'} refresh={refresh} go={go} /></div>}
+        {tab === 'audiences' && emails && <div className="tab-body"><AudiencesTab campaignId={campaign.id} emails={emails} fields={fields} onEmails={() => go('emails')} onNext={() => go('preview')} /></div>}
         {tab === 'emails' && emails && <EmailsTab emails={emails} lang={lang} canEdit={canEdit} refresh={refresh} onPick={(l) => go('emails', l)} onSegments={() => go('segments')} onNext={() => go('audiences')} />}
         {!emails && <div className="tab-body"><p>Loading…</p></div>}
       </div>
@@ -314,7 +320,7 @@ function DerivedSegments({ campaignId, languages }: { campaignId: string; langua
 
 const showValue = (v: unknown): string => (v === null || v === undefined || v === '' ? 'blank' : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v));
 
-function AudiencesTab({ campaignId, emails, fields, onEmails }: { campaignId: string; emails: CampaignEmails; fields: ContactField[]; onEmails: () => void }) {
+function AudiencesTab({ campaignId, emails, fields, onEmails, onNext }: { campaignId: string; emails: CampaignEmails; fields: ContactField[]; onEmails: () => void; onNext: () => void }) {
   const { data, error } = useDerived(campaignId);
   const label = (k: string) => (fields.find((f) => f.key === k)?.label ?? k).replace(/ \(.*\)$/, '');
   const hidden = ['first_name', 'last_name', 'company', 'email', 'language'];
@@ -349,7 +355,245 @@ function AudiencesTab({ campaignId, emails, fields, onEmails }: { campaignId: st
           </section>
         );
       })}
-      <div className="seg-next"><button type="button" className="secondary" onClick={onEmails}>← Back to Emails</button></div>
+      <div className="seg-next"><button type="button" onClick={onEmails}>← Back to Emails</button> <button type="button" className="primary" data-testid="next-tab" onClick={onNext}>Next →</button></div>
+    </div>
+  );
+}
+
+// ---------------- Preview ----------------
+
+type Go = (t: TabId, l?: string, extra?: Record<string, string>) => void;
+
+function PreviewTab({ campaignId, emails, lang, aud, rev, go }: { campaignId: string; emails: CampaignEmails; lang: string; aud: string | null; rev: string | null; go: Go }) {
+  const { data: derived } = useDerived(campaignId);
+  const withEmail = emails.languages.filter((l) => l.variant);
+  const current = withEmail.find((l) => l.id === lang) ?? withEmail[0];
+  const [revisions, setRevisions] = useState<EmailRevisionSummary[]>([]);
+  const [result, setResult] = useState<PreviewResponse | null>(null);
+  const [error, setError] = useState('');
+  const audiences = (derived?.audiences ?? []).filter((a) => a.languageId === current?.id);
+  const audienceId = aud ?? (audiences[0] ? `audience:${audiences[0].id}` : 'sample');
+  const variantId = current?.variant?.id;
+  const desktopStart = Math.max(560, Math.min(980, Math.round(window.innerWidth - 375 - 24 - 72 - 40)));
+
+  useEffect(() => {
+    if (!variantId) return;
+    api<EmailRevisionSummary[]>('GET', `/api/emails/${variantId}/revisions`).then(setRevisions).catch(() => undefined);
+  }, [variantId]);
+
+  useEffect(() => {
+    if (!variantId || (derived === null && !aud)) return;
+    let live = true;
+    (async () => {
+      try {
+        if (!rev) await flushSave();
+        const r = await api<PreviewResponse>('GET', `/api/emails/${variantId}/preview?as=${encodeURIComponent(audienceId)}${rev ? `&revision=${rev}` : ''}`);
+        if (live) { setResult(r); setError(''); }
+      } catch (e) { if (live) setError(errorText(e)); }
+    })();
+    return () => { live = false; };
+  }, [variantId, audienceId, rev, derived, aud]);
+
+  if (withEmail.length === 0) return <p className="muted">No email has been created yet. Create the English email in Segments first.</p>;
+  const set = (patch: { lang?: string; aud?: string | null; rev?: string | null }) => {
+    const extra: Record<string, string> = {};
+    const nextAud = 'aud' in patch ? patch.aud : patch.lang ? null : aud;
+    const nextRev = 'rev' in patch ? patch.rev : patch.lang ? null : rev;
+    if (nextAud) extra.aud = nextAud;
+    if (nextRev) extra.rev = nextRev;
+    go('preview', patch.lang ?? current?.id, extra);
+  };
+  return (
+    <div className="preview-pane">
+      <div className="preview-bar">
+        <label className="small">Email version{' '}
+          <select value={current?.id ?? ''} onChange={(e) => set({ lang: e.target.value, aud: null, rev: null })}>
+            {withEmail.map((l) => <option key={l.id} value={l.id}>{l.emailName}</option>)}
+          </select>
+        </label>
+        <label className="small">Test audience{' '}
+          <select value={audienceId} onChange={(e) => set({ aud: e.target.value })}>
+            <optgroup label={`${current?.name ?? ''} audiences`}>
+              {audiences.map((a) => <option key={a.id} value={`audience:${a.id}`}>{a.name}</option>)}
+            </optgroup>
+            <optgroup label="Built-in examples">{SAMPLE_RECIPIENTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
+          </select>
+        </label>
+        <label className="small">Revision{' '}
+          <select value={rev ?? ''} onChange={(e) => set({ rev: e.target.value || null })}>
+            <option value="">Current draft</option>
+            {revisions.map((r) => <option key={r.id} value={r.id}>Revision {r.number}{r.label ? ` – ${r.label}` : ''}</option>)}
+          </select>
+        </label>
+        <button type="button" className="primary" data-testid="next-tab" style={{ marginLeft: 'auto' }} onClick={() => go('versions', current?.id)}>Next →</button>
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {result && <p className="small" data-testid="previewing-as">Previewing <strong data-testid="shown-version">{result.versionLabel}</strong>{result.recipientLabel ? <> as <strong>{result.recipientLabel}</strong></> : null}</p>}
+      <p className="muted small">Browser preview. It is not an Outlook or Gmail simulation: real email apps can render differently.</p>
+      {result && result.placeholderIssues.length > 0 && (
+        <div className="error" role="alert"><strong>{result.placeholderIssues.length} personalization problem{result.placeholderIssues.length > 1 ? 's' : ''}:</strong>
+          <ul>{result.placeholderIssues.map((i, k) => <li key={k}><code>{i.text}</code>: {i.message}</li>)}</ul></div>
+      )}
+      <div className="preview-devices">
+        <DeviceFrame kind="phone" html={result?.html ?? ''} widths={PHONE_WIDTHS} initial={375} />
+        <DeviceFrame kind="desktop" html={result?.html ?? ''} widths={DESKTOP_WIDTHS} initial={desktopStart} />
+      </div>
+      {result?.blocks && (
+        <section className="seg-panel tint-map" aria-labelledby="why-title" data-testid="why-panel">
+          <h2 id="why-title">Why each block is shown or hidden</h2>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>#</th><th>Block</th><th>Result</th><th>Reason</th></tr></thead>
+              <tbody>
+                {result.blocks.map((b, i) => (
+                  <tr key={b.id} data-testid="why-row">
+                    <td>{i + 1}</td>
+                    <td>{b.label}</td>
+                    <td><span className={`pol ${b.visible ? 'positive' : 'negative'}`}>{b.visible ? 'Shown' : 'Hidden'}</span></td>
+                    <td>{b.summary}{b.reasons.length > 1 && <div className="muted small">{b.reasons.map((r) => `${r.text}: ${r.met ? 'met' : 'not met'}`).join(' · ')}</div>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Versions ----------------
+
+const QA_LABEL: Record<string, string> = { started: 'Started', sent_for_corrections: 'Sent for Corrections', retest: 'Retest', approved: 'Approved', withdrawn: 'Withdrawn' };
+const when = (iso: string): string => new Date(iso).toLocaleString();
+
+function VersionsTab({ emails, lang, canEdit, canSubmit, refresh, go }: { emails: CampaignEmails; lang: string; canEdit: boolean; canSubmit: boolean; refresh: () => Promise<void>; go: Go }) {
+  const withEmail = emails.languages.filter((l) => l.variant);
+  const current = withEmail.find((l) => l.id === lang) ?? withEmail[0];
+  const variantId = current?.variant?.id;
+  const [revisions, setRevisions] = useState<EmailRevisionSummary[]>([]);
+  const [qaRev, setQaRev] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [diff, setDiff] = useState<ReturnType<typeof diffRevisions> | null>(null);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!variantId) return;
+    setRevisions(await api<EmailRevisionSummary[]>('GET', `/api/emails/${variantId}/revisions`));
+  }, [variantId]);
+  useEffect(() => { setQaRev(''); setDiff(null); setMessage(''); setError(''); load().catch((e) => setError(errorText(e))); }, [load]);
+  useEffect(() => { setTo(revisions[0]?.id ?? ''); setFrom(revisions[1]?.id ?? revisions[0]?.id ?? ''); }, [revisions]);
+
+  if (withEmail.length === 0 || !current || !variantId) return <p className="muted">No email has been created yet. Create the English email in Segments first.</p>;
+  const latest = revisions[0];
+  const chosen = revisions.find((r) => r.id === qaRev) ?? latest;
+  const unsaved = current.variant!.unsavedChanges;
+
+  async function send() {
+    setError(''); setMessage(''); setBusy(true);
+    try {
+      const r = await api<QaSubmissionResult>('POST', `/api/emails/${variantId}/qa-submissions`, { ...(qaRev ? { revisionId: qaRev } : {}), requestId: crypto.randomUUID() });
+      setMessage(`Revision ${r.revisionNumber} of ${current!.emailName} was sent to QA.`);
+      await load(); await refresh();
+    } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+  }
+  async function saveRevision() {
+    setError(''); setBusy(true);
+    try { const r = await api<{ number: number }>('POST', `/api/emails/${variantId}/revisions`, {}); setMessage(`Saved as revision ${r.number}.`); await load(); await refresh(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+  }
+  async function restore(r: EmailRevisionSummary) {
+    if (!window.confirm(`Restore revision ${r.number}? Your current draft is kept in the history and the restore is saved as a new revision.`)) return;
+    setError(''); setBusy(true);
+    try { await api('POST', `/api/emails/${variantId}/revisions/${r.id}/restore`); setMessage(`Revision ${r.number} restored as a new revision.`); await load(); await refresh(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+  }
+  async function compare() {
+    setError(''); setDiff(null);
+    try {
+      const [a, b] = await Promise.all([from, to].map((id) => api<EmailRevisionDetail>('GET', `/api/emails/${variantId}/revisions/${id}`)));
+      setDiff(diffRevisions(a!.content as EmailContent, b!.content as EmailContent));
+    } catch (e) { setError(errorText(e)); }
+  }
+  const num = (id: string) => revisions.find((r) => r.id === id)?.number;
+
+  return (
+    <div className="audience-pane">
+      <div className="lang-bar" role="group" aria-label="Language" style={{ margin: '0 -16px 12px' }}>
+        {withEmail.map((l) => (
+          <button key={l.id} type="button" className="lang-chip" aria-pressed={current.id === l.id} onClick={() => go('versions', l.id)}>{l.name}</button>
+        ))}
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {message && <p className="ok" role="status" data-testid="versions-message">{message}</p>}
+
+      <section className="seg-panel tint-who" aria-labelledby="rev-title" data-testid="revision-list">
+        <h2 id="rev-title">{current.emailName}</h2>
+        <p className="muted small">Each language has its own saved revisions. Your work is saved automatically as a draft; save a revision to mark a point you may want to return to or send to QA.</p>
+        {canEdit && <p><button type="button" disabled={busy} onClick={() => void saveRevision()}>Save a revision now</button></p>}
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Revision</th><th>Saved</th><th>By</th><th>What</th><th>QA status</th><th></th></tr></thead>
+            <tbody>
+              {revisions.map((r) => (
+                <tr key={r.id} data-testid="revision-row">
+                  <td><strong>Revision {r.number}</strong>{r.id === latest?.id ? <span className="muted small"> — Latest</span> : null}</td>
+                  <td>{when(r.createdAt)}</td>
+                  <td>{r.createdByName ?? '—'}</td>
+                  <td>{r.kind === 'created' ? 'Created' : r.kind === 'clone' ? 'Created from another email' : r.kind === 'restore' ? 'Restored' : r.kind === 'upgrade' ? 'Moved from the previous editor' : 'Saved'}{r.label ? <div className="muted small">{r.label}</div> : null}</td>
+                  <td>{r.qaStatus ? <span className="badge">{QA_LABEL[r.qaStatus]}</span> : <span className="muted">Not sent</span>}</td>
+                  <td>
+                    <button type="button" className="link" aria-label={`Open revision ${r.number}`} onClick={() => go('preview', current.id, { rev: r.id })}>Open</button>
+                    {canEdit && <button type="button" className="link" aria-label={`Restore revision ${r.number}`} disabled={busy} onClick={() => void restore(r)}>Restore</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="seg-panel tint-test" aria-labelledby="cmp-title" data-testid="compare-panel">
+        <h2 id="cmp-title">Compare revisions</h2>
+        {revisions.length < 2 ? <p className="muted">Save another revision to compare.</p> : (
+          <>
+            <div className="row">
+              <div><label htmlFor="cmp-from">From</label><select id="cmp-from" value={from} onChange={(e) => setFrom(e.target.value)}>{revisions.map((r) => <option key={r.id} value={r.id}>Revision {r.number}</option>)}</select></div>
+              <div><label htmlFor="cmp-to">To</label><select id="cmp-to" value={to} onChange={(e) => setTo(e.target.value)}>{revisions.map((r) => <option key={r.id} value={r.id}>Revision {r.number}</option>)}</select></div>
+              <div style={{ flex: '0 0 auto' }}><button type="button" onClick={() => void compare()}>Compare</button></div>
+            </div>
+            {diff && (
+              <div data-testid="diff">
+                <h3>Revision {num(from)} → Revision {num(to)}</h3>
+                {diff.same && <p className="muted">No differences.</p>}
+                {diff.settings.length > 0 && <ul>{diff.settings.map((s) => <li key={s.key}><strong>{s.key}:</strong> {s.from} → {s.to}</li>)}</ul>}
+                {diff.blocks.length > 0 && <ul>{diff.blocks.map((b) => <li key={b.id}><strong>{b.label}</strong> {b.change}{b.details.length ? <ul>{b.details.map((d, i) => <li key={i} className="small">{d}</li>)}</ul> : null}</li>)}</ul>}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="seg-panel tint-map" aria-labelledby="qa-title" data-testid="send-to-qa">
+        <h2 id="qa-title">Send to QA</h2>
+        {!canSubmit && <p className="muted small">Only a Builder can send a revision to QA.</p>}
+        <div className="row">
+          <div>
+            <label htmlFor="qa-rev">Revision to send</label>
+            <select id="qa-rev" disabled={!canSubmit || revisions.length === 0} value={qaRev} onChange={(e) => setQaRev(e.target.value)}>
+              <option value="">Latest saved revision{latest ? ` (Revision ${latest.number})` : ''}</option>
+              {revisions.map((r) => <option key={r.id} value={r.id}>Revision {r.number}{r.qaStatus ? ` – ${QA_LABEL[r.qaStatus]}` : ''}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: '0 0 auto' }}><button type="button" className="primary" disabled={!canSubmit || busy || !chosen} onClick={() => void send()}>Send to QA</button></div>
+        </div>
+        {chosen && <p data-testid="qa-will-send"><strong>Revision {chosen.number}</strong> of {current.emailName} will be submitted{qaRev ? '' : ' (the latest saved revision)'}.</p>}
+        {unsaved && <p className="error small" role="status" data-testid="unsaved-warning">This email has changes that are not saved in a revision. They will not be sent. {canEdit && <button type="button" className="link" onClick={() => void saveRevision()}>Save them as a new revision first</button>}</p>}
+        <p className="muted small">QA reviews exactly this saved revision. Saving a newer revision later does not change what is under review.</p>
+      </section>
+
+      <div className="seg-next"><button type="button" className="primary" data-testid="next-tab" disabled title="QA arrives in a later phase">Next →</button></div>
     </div>
   );
 }

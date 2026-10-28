@@ -326,12 +326,12 @@ function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
 }
 
 // ---------- Preview ----------
-const PHONE_WIDTHS = [
+export const PHONE_WIDTHS = [
   { w: 320, label: 'Small phone (320)' },
   { w: 375, label: 'Phone (375)' },
   { w: 414, label: 'Large phone (414)' },
 ];
-const DESKTOP_WIDTHS = [
+export const DESKTOP_WIDTHS = [
   { w: 600, label: 'Email width (600)' },
   { w: 768, label: 'Tablet (768)' },
   { w: 1024, label: 'Desktop (1024)' },
@@ -342,7 +342,7 @@ const DESKTOP_WIDTHS = [
 const PREVIEW_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' https:; font-src https:; form-action 'none'">`;
 
 /** One simulated screen: the generated email at a chosen width. */
-function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop'; html: string; widths: { w: number; label: string }[]; initial: number }) {
+export function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop'; html: string; widths: { w: number; label: string }[]; initial: number }) {
   const [width, setWidth] = useState(initial);
   const name = kind === 'phone' ? 'Phone' : 'Desktop';
   return (

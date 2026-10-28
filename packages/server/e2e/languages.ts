@@ -103,6 +103,48 @@ try {
   assert((await cards.filter({ hasText: 'Not UAE English-Audience' }).first().innerText()).includes('1 hidden'), 'the Not UAE audience has the rule block hidden');
   ok('test audiences: a baseline per language and shown / hidden audiences for the rules, copied with the German email');
 
+  // ---- preview: pick the email and the test audience; the same rules decide what is shown, and why
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  await page.getByLabel('Email version').selectOption({ label: 'English-Email' });
+  const phone = page.frameLocator('iframe[title="Phone preview"]');
+  await page.getByLabel('Test audience').selectOption({ label: 'UAE VIP English-Audience' });
+  await page.getByTestId('previewing-as').getByText('UAE VIP English-Audience (test audience)').waitFor();
+  await phone.getByText('Autumn offers', { exact: true }).first().waitFor();
+  const whyRows = page.getByTestId('why-row');
+  assert((await whyRows.filter({ hasText: 'Shown: Show when' }).count()) >= 1, 'the why-panel explains the shown block');
+  await page.getByLabel('Test audience').selectOption({ label: 'Not UAE English-Audience' });
+  await page.getByTestId('previewing-as').getByText('Not UAE English-Audience (test audience)').waitFor();
+  await page.waitForFunction(() => !/Autumn offers/.test(document.querySelector<HTMLIFrameElement>('iframe[title="Phone preview"]')?.srcdoc ?? 'Autumn offers'));
+  assert((await whyRows.filter({ hasText: 'Hidden' }).count()) >= 1, 'the why-panel explains the hidden block');
+  await page.locator('.preview-bar select').nth(2).selectOption({ label: 'Revision 1' }); // the Revision selector
+  await page.getByTestId('shown-version').getByText(/saved revision/).waitFor();
+  ok('Preview: choose the email and a test audience; the rule block is shown or hidden and the reason is listed; any saved revision can be previewed');
+
+  // ---- versions: chips per language, own revisions, send any saved revision to QA
+  await page.getByTestId('next-tab').click();
+  await page.getByTestId('revision-list').waitFor();
+  await page.getByRole('group', { name: 'Language' }).getByRole('button', { name: 'German' }).click();
+  await page.getByRole('heading', { name: 'German-Email' }).waitFor();
+  await page.getByTestId('revision-row').nth(1).waitFor();
+  assert((await page.getByTestId('revision-row').count()) === 2, 'German has its own two revisions');
+  await page.getByTestId('qa-will-send').filter({ hasText: 'Revision 2 of German-Email will be submitted (the latest saved revision)' }).waitFor();
+  await page.locator('#qa-rev').selectOption({ label: 'Revision 1' });
+  await page.getByTestId('qa-will-send').filter({ hasText: 'Revision 1 of German-Email will be submitted.' }).waitFor();
+  await page.getByRole('button', { name: 'Send to QA' }).click();
+  await page.getByTestId('versions-message').filter({ hasText: 'Revision 1 of German-Email was sent to QA.' }).waitFor();
+  await page.getByTestId('revision-row').filter({ hasText: 'Revision 1' }).getByText('Started').waitFor();
+  await page.locator('#qa-rev').selectOption({ index: 0 }); // nothing chosen: the latest saved revision
+  await page.getByRole('button', { name: 'Send to QA' }).click();
+  await page.getByTestId('versions-message').filter({ hasText: 'Revision 2 of German-Email was sent to QA.' }).waitFor();
+  await page.getByRole('button', { name: 'Send to QA' }).click();
+  await page.getByText('Revision 2 is already with QA').waitFor();
+  ok('Send to QA: an older revision, then the latest by default; the same revision cannot be sent twice');
+
+  await page.getByRole('button', { name: 'Compare' }).click();
+  await page.getByTestId('diff').getByText('Revision 1 → Revision 2').waitFor();
+  await page.getByTestId('diff').getByText(/Herbstangebote/).waitFor();
+  ok('two revisions of one language can be compared');
+
   // ---- Arabic is cloned from German (any saved email can be the source) and renders right to left
   await page.getByRole('tab', { name: 'Segments' }).click();
   await page.getByLabel('Create Arabic-Email from').selectOption({ label: 'German-Email' });

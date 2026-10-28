@@ -1,8 +1,8 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
-  collectAssetIds, emailName, normalizeContent, parseLanguageList, validateContent, visibleBlocks,
-  type CampaignEmails, type DerivedResponse, type EmailContent, type EmailDraftDto, type EmailRevisionSummary, type LanguageDto, type PreviewResponse, type SaveDraftResponse,
+  blockDefinition, collectAssetIds, emailName, explainBlock, normalizeContent, parseLanguageList, validateContent, visibleBlocks,
+  type BlockExplanationDto, type CampaignEmails, type DerivedResponse, type EmailContent, type EmailDraftDto, type EmailRevisionDetail, type EmailRevisionSummary, type QaSubmissionResult, type LanguageDto, type PreviewResponse, type SaveDraftResponse,
 } from '@cl/shared';
 import { missingAssets } from '../assets.js';
 import { resolveRecipient } from '../campaignAudience.js';
@@ -23,6 +23,7 @@ const languagesBody = z.object({ input: z.string().max(2000) });
 const createBody = z.object({ languageId: z.string().min(1).max(20), createFromId: z.string().uuid().nullable().optional(), requestId: z.string().min(8).max(80).optional() });
 const draftBody = z.object({ content: z.unknown(), baseVersion: z.number().int().min(1) });
 const labelBody = z.object({ label: z.string().trim().max(120).optional() });
+const submitBody = z.object({ revisionId: z.string().uuid().optional(), note: z.string().trim().max(1000).optional(), requestId: z.string().min(8).max(80).optional() });
 
 type VariantRow = { id: string; campaign_id: string; language_id: string; draft_content: EmailContent; draft_version: number; draft_hash: string; updated_at: Date };
 
@@ -195,12 +196,63 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
   app.get<{ Params: { id: string } }>('/api/emails/:id/revisions', { config: { access: 'campaign.view' } }, async (req, reply): Promise<EmailRevisionSummary[] | FastifyReply> => {
     const { id } = idParam.parse(req.params);
     if (!(await variantRow(db, id))) return notFound(reply);
-    const r = await db.query<{ id: string; number: number; kind: string; label: string | null; created_by_name: string | null; created_at: Date; content_hash: string }>(
-      `SELECT r.id, r.number, r.kind, r.label, u.name AS created_by_name, r.created_at, r.content_hash
+    const r = await db.query<{ id: string; number: number; kind: string; label: string | null; created_by_name: string | null; created_at: Date; content_hash: string; qa_state: EmailRevisionSummary['qaStatus'] }>(
+      `SELECT r.id, r.number, r.kind, r.label, u.name AS created_by_name, r.created_at, r.content_hash,
+              (SELECT s.state FROM qa_submission s WHERE s.revision_id = r.id ORDER BY s.created_at DESC LIMIT 1) AS qa_state
          FROM email_revision r LEFT JOIN app_user u ON u.id = r.created_by WHERE r.variant_id = $1 ORDER BY r.number DESC`,
       [id],
     );
-    return r.rows.map((x) => ({ id: x.id, number: x.number, kind: x.kind, label: x.label, createdByName: x.created_by_name, createdAt: x.created_at.toISOString(), hash: x.content_hash }));
+    return r.rows.map((x) => ({ id: x.id, number: x.number, kind: x.kind, label: x.label, createdByName: x.created_by_name, createdAt: x.created_at.toISOString(), hash: x.content_hash, qaStatus: x.qa_state }));
+  });
+
+  // One saved revision with its content (to open or compare it).
+  app.get<{ Params: { id: string; rid: string } }>('/api/emails/:id/revisions/:rid', { config: { access: 'campaign.view' } }, async (req, reply): Promise<EmailRevisionDetail | FastifyReply> => {
+    const { id, rid } = revParams.parse(req.params);
+    const r = await db.query<{ id: string; number: number; kind: string; label: string | null; created_by_name: string | null; created_at: Date; content_hash: string; content: unknown; qa_state: EmailRevisionSummary['qaStatus'] }>(
+      `SELECT r.id, r.number, r.kind, r.label, u.name AS created_by_name, r.created_at, r.content_hash, r.content,
+              (SELECT s.state FROM qa_submission s WHERE s.revision_id = r.id ORDER BY s.created_at DESC LIMIT 1) AS qa_state
+         FROM email_revision r LEFT JOIN app_user u ON u.id = r.created_by WHERE r.id = $1 AND r.variant_id = $2`,
+      [rid, id],
+    );
+    const x = r.rows[0];
+    if (!x) return notFound(reply, 'Revision');
+    return { id: x.id, number: x.number, kind: x.kind, label: x.label, createdByName: x.created_by_name, createdAt: x.created_at.toISOString(), hash: x.content_hash, qaStatus: x.qa_state, content: normalizeContent(x.content) };
+  });
+
+  // Send a saved revision to QA: the latest one unless another is named. The submission points at that exact revision and
+  // never at the draft, so unsaved changes are never included and newer revisions never change what is under review.
+  app.post<{ Params: { id: string } }>('/api/emails/:id/qa-submissions', { config: { access: 'campaign.submit' } }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = submitBody.parse(req.body ?? {});
+    const userId = req.auth!.user.id;
+    const out = await withTransaction(db, async (q) => {
+      const v = await variantRow(q, id, true);
+      if (!v) return { kind: 'missing' as const };
+      if (v.status !== 'draft') return { kind: 'locked' as const };
+      if (body.requestId) {
+        const prior = await q.query<{ id: string; revision_id: string; state: string; number: number }>(
+          'SELECT s.id, s.revision_id, s.state, r.number FROM qa_submission s JOIN email_revision r ON r.id = s.revision_id WHERE s.variant_id = $1 AND s.request_id = $2', [id, body.requestId]);
+        if (prior.rows[0]) return { kind: 'ok' as const, existing: true, result: { id: prior.rows[0].id, revisionId: prior.rows[0].revision_id, revisionNumber: prior.rows[0].number, state: prior.rows[0].state, draftDiffers: false, existing: true } satisfies QaSubmissionResult };
+      }
+      const rev = body.revisionId
+        ? await q.query<{ id: string; number: number; content_hash: string }>('SELECT id, number, content_hash FROM email_revision WHERE id = $1 AND variant_id = $2', [body.revisionId, id])
+        : await q.query<{ id: string; number: number; content_hash: string }>('SELECT id, number, content_hash FROM email_revision WHERE variant_id = $1 ORDER BY number DESC LIMIT 1', [id]);
+      const r = rev.rows[0];
+      if (!r) return { kind: 'bad_revision' as const };
+      const active = await q.query<{ state: string }>(`SELECT state FROM qa_submission WHERE revision_id = $1 AND state IN ('started', 'sent_for_corrections', 'retest', 'approved')`, [r.id]);
+      if (active.rows[0]) return { kind: 'duplicate' as const, state: active.rows[0].state, number: r.number };
+      const ins = await q.query<{ id: string; state: string }>(
+        `INSERT INTO qa_submission (workspace_id, campaign_id, variant_id, revision_id, note, request_id, submitted_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, state`,
+        [DEFAULT_WORKSPACE_ID, v.campaign_id, id, r.id, body.note ?? null, body.requestId ?? null, userId],
+      );
+      await logActivity(q, { actorId: userId, action: 'email.submitted_to_qa', entityType: 'campaign', entityId: v.campaign_id, details: { language: v.language_id, revision: r.number, submissionId: ins.rows[0]!.id, explicit: !!body.revisionId } });
+      return { kind: 'ok' as const, existing: false, result: { id: ins.rows[0]!.id, revisionId: r.id, revisionNumber: r.number, state: ins.rows[0]!.state, draftDiffers: v.draft_hash !== r.content_hash, existing: false } satisfies QaSubmissionResult };
+    });
+    if (out.kind === 'missing') return notFound(reply);
+    if (out.kind === 'locked') return reply.status(409).send({ error: 'locked', message: 'This email can no longer be edited.' });
+    if (out.kind === 'bad_revision') return reply.status(400).send({ error: 'invalid_revision', message: 'Save a revision first, or choose one of this email\'s saved revisions.' });
+    if (out.kind === 'duplicate') return reply.status(409).send({ error: 'already_submitted', message: `Revision ${out.number} is already with QA (${out.state === 'approved' ? 'approved' : 'under review'}).` });
+    return reply.status(out.existing ? 200 : 201).send(out.result);
   });
 
   app.post<{ Params: { id: string } }>('/api/emails/:id/revisions', { config: { access: 'campaign.edit' } }, async (req, reply) => {
@@ -265,6 +317,11 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
     const shown = who.kind === 'recipient' && who.recipient ? visibleBlocks(content.blocks, (f) => (who.recipient as Record<string, string | number | boolean | null | undefined>)[f], typeOf) : content.blocks;
     const out = await renderEmail({ ...content, blocks: shown }, { baseUrl: config.baseUrl, brand, knownFields, language: { locale: v.locale, direction: v.direction }, ...(who.kind === 'recipient' ? { recipient: who.recipient } : {}) });
     out.versionLabel = `${emailName({ name: v.language_name })}${rid ? ' (saved revision)' : ''}${shown.length !== content.blocks.length ? ` · ${shown.length} of ${content.blocks.length} blocks` : ''}`;
+    if (who.kind === 'recipient' && who.recipient) {
+      const r = who.recipient as Record<string, string | number | boolean | null | undefined>;
+      const labelOf = (k: string) => (fieldList.find((f) => f.key === k)?.label ?? k).replace(/ \(.*\)$/, '');
+      out.blocks = content.blocks.map((b): BlockExplanationDto => ({ id: b.id, type: b.type, label: blockDefinition(b.type)?.label ?? b.type, ...explainBlock(b, (f) => r[f], typeOf, labelOf) }));
+    }
     return who.kind === 'recipient' ? { ...out, recipientLabel: who.label } : out;
   });
 }
