@@ -87,7 +87,7 @@ function useLibrary(): BlockDefinition[] {
 
 /** The campaign's segment fields (the only fields a "show when" condition can use). */
 /** segmentFields: the campaign's segment fields. conditionFields: the fields a block condition may use (any field when building one email per language, else the segment fields). */
-const AudienceCtx = createContext<{ segmentFields: ContactField[]; conditionFields: ContactField[]; perLanguage: boolean }>({ segmentFields: [], conditionFields: [], perLanguage: false });
+export const AudienceCtx = createContext<{ segmentFields: ContactField[]; conditionFields: ContactField[]; perLanguage: boolean }>({ segmentFields: [], conditionFields: [], perLanguage: false });
 const plainLabel = (label: string): string => label.replace(/ \(.*\)$/, '');
 
 /** The words and blocks being edited: the Default version, or the segment version chosen in the bar above the canvas. */
@@ -243,7 +243,7 @@ function ShowWhenPanel({ block, canEdit }: { block: BlockInstance; canEdit: bool
   const { conditionFields, perLanguage } = useContext(AudienceCtx);
   const setShowWhen = useEditor((s) => s.setShowWhen);
   if (conditionFields.length === 0) {
-    return <div className="show-when"><h3>Who sees this block</h3><p className="muted small">Everyone. To show a block only to some segments, first choose this campaign's segment fields in the Segments tab.</p></div>;
+    return <div className="show-when"><h3>Who sees this block</h3><p className="muted small">Everyone. To show a block only to some segments, first choose this email's segment fields in the Segments tab.</p></div>;
   }
   const stale = block.showWhen ? [...usedFields(block.showWhen)].filter((k) => !conditionFields.some((f) => f.key === k)) : [];
   const first = (conditionFields.find((f) => perLanguage && f.key === 'country') ?? conditionFields[0]!).key;
@@ -259,7 +259,7 @@ function ShowWhenPanel({ block, canEdit }: { block: BlockInstance; canEdit: bool
       {stale.length > 0 && <p className="error" role="alert">This condition uses {stale.join(', ')}, which cannot be used here (any more). Choose the field again or remove the rule.</p>}
       {perLanguage
         ? <p className="muted small">Conditions can use any contact field. The values you compare with "is" or "is one of" become segments (for example UAE-en and SA-en), listed in the Segments tab. Contacts who do not meet a condition get the email without this block.</p>
-        : <p className="muted small">Conditions can use this campaign's segment fields: {conditionFields.map((f) => plainLabel(f.label)).join(', ')}. Contacts who do not meet them get the email without this block.</p>}
+        : <p className="muted small">Conditions can use this email's segment fields: {conditionFields.map((f) => plainLabel(f.label)).join(', ')}. Contacts who do not meet them get the email without this block.</p>}
     </div>
   );
 }
@@ -368,7 +368,7 @@ function DeviceFrame({ kind, html, widths, initial }: { kind: 'phone' | 'desktop
   );
 }
 
-function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: string; revision?: RevisionDto; onClose?: () => void; /** Show the email for this recipient only (no "Preview as" choice): used for the quick view in the Versions tab. */ fixedAs?: string }) {
+export function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: string; revision?: RevisionDto; onClose?: () => void; /** Show the email for this recipient only (no "Preview as" choice): used for the quick view in the Versions tab. */ fixedAs?: string }) {
   const [html, setHtml] = useState('');
   const [text, setText] = useState('');
   const [issues, setIssues] = useState<PlaceholderIssue[]>([]);
@@ -443,7 +443,7 @@ function PreviewPane({ campaignId, revision, onClose, fixedAs }: { campaignId: s
 }
 
 /** Live preview: the real email HTML next to the canvas, refreshed shortly after each saved edit. */
-function LivePane({ campaignId }: { campaignId: string }) {
+function LivePane({ previewBase }: { previewBase: string }) {
   const saveState = useEditor((s) => s.saveState);
   const version = useEditor((s) => s.version);
   const editing = useEditor((s) => s.editing);
@@ -456,12 +456,12 @@ function LivePane({ campaignId }: { campaignId: string }) {
     let live = true;
     const timer = setTimeout(async () => {
       try {
-        const r = await api<PreviewResponse>('GET', `/api/campaigns/${campaignId}/preview?as=sample${editing ? `&variant=${editing}` : ''}`);
+        const r = await api<PreviewResponse>('GET', `${previewBase}?as=sample${editing ? `&variant=${editing}` : ''}`);
         if (live) { setHtml(r.html); setIssues(r.placeholderIssues.length); setError(''); }
       } catch (e) { if (live) setError(errorText(e)); }
     }, 600);
     return () => { live = false; clearTimeout(timer); };
-  }, [campaignId, saveState, version, editing]);
+  }, [previewBase, saveState, version, editing]);
   return (
     <div className="live-pane" data-testid="live-preview">
       <div className="preview-bar">
@@ -637,48 +637,19 @@ function SegmentOverview({ campaignId }: { campaignId: string }) {
   );
 }
 
-// ---------- Page ----------
-export function EditorPage() {
-  const { id = '' } = useParams();
-  const { can } = useSession();
-  const canEdit = can('campaign.edit');
-  const canAny = canEdit || can('html.custom'); // an Admin may only work on Custom HTML blocks
-  const lib = useLibrary();
-  const s = useEditor();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [tab, setTab] = useState<'segments' | 'email' | 'preview' | 'versions'>((location.state as { tab?: 'segments' } | null)?.tab ?? 'email'); // a new campaign opens on its Segments: who it is for comes first
-  // the "open on Audience" hint is for the first visit only: a reload goes back to the normal view
-  useEffect(() => { if (location.state) navigate(location.pathname, { replace: true, state: null }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [loadError, setLoadError] = useState('');
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [live, setLive] = useState(false);
-  const [audienceFields, setAudienceFields] = useState<string[]>([]);
-  const [availableFields, setAvailableFields] = useState<ContactField[]>([]);
-  const [segmentsRefresh, setSegmentsRefresh] = useState(0);
-  useDerivedTestContacts(id, canEdit && s.status === 'draft' && s.campaignId === id, () => setSegmentsRefresh((n) => n + 1));
-
-  const reload = useCallback(async () => {
-    try {
-      useEditor.getState().load(await api<CampaignDto>('GET', `/api/campaigns/${id}`));
-      setLoadError('');
-    } catch (e) { setLoadError(errorText(e)); }
-  }, [id]);
-  useEffect(() => { void reload(); }, [reload]);
-  // the campaign's segment fields decide which segment versions are in use
+// ---------- Pieces shared by the previous editor and the language-email editor ----------
+/** Autosave 1.2 s after the last change (retry after a failed save), a warning before leaving with unsaved work, and undo/redo keys. */
+export function useAutosave(id: string, canAny: boolean, canEdit: boolean): void {
+  const saveState = useEditor((s) => s.saveState);
+  const content = useEditor((s) => s.content);
+  const campaignId = useEditor((s) => s.campaignId);
   useEffect(() => {
-    api<{ audience: { fields: string[] }; available: ContactField[] }>('GET', `/api/campaigns/${id}/audience`).then((a) => { setAudienceFields(a.audience.fields); setAvailableFields(a.available); }).catch(() => undefined);
-  }, [id, tab]);
-
-  // Autosave 1.2 s after the last change; retry after a failed save.
-  useEffect(() => {
-    if (!canAny || s.campaignId !== id) return;
-    if (s.saveState !== 'dirty' && s.saveState !== 'error') return;
-    const t = setTimeout(() => void useEditor.getState().save(), s.saveState === 'error' ? 5000 : 1200);
+    if (!canAny || campaignId !== id) return;
+    if (saveState !== 'dirty' && saveState !== 'error') return;
+    const t = setTimeout(() => void useEditor.getState().save(), saveState === 'error' ? 5000 : 1200);
     return () => clearTimeout(t);
-  }, [s.content, s.saveState, canAny, s.campaignId, id]);
+  }, [content, saveState, canAny, campaignId, id]);
 
-  // Warn before leaving with unsaved changes; keyboard shortcuts for undo/redo.
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => { if (useEditor.getState().saveState !== 'saved') e.preventDefault(); };
     const keys = (e: KeyboardEvent) => {
@@ -692,18 +663,27 @@ export function EditorPage() {
     window.addEventListener('keydown', keys);
     return () => { window.removeEventListener('beforeunload', beforeUnload); window.removeEventListener('keydown', keys); };
   }, [canEdit]);
+}
 
+/** The block library, the canvas, the properties and the optional live preview, with drag and drop. */
+export function EditorGrid({ live, previewBase }: { live: boolean; previewBase: string }) {
+  const { can } = useSession();
+  const canEdit = can('campaign.edit');
+  const canAny = canEdit || can('html.custom'); // an Admin may only work on Custom HTML blocks
+  const lib = useLibrary();
+  const content = useEditor((s) => s.content);
+  const editing = useEditor((s) => s.editing);
+  const [dragging, setDragging] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-
   const activeLabel = useMemo(() => {
     if (!dragging) return '';
     if (dragging.startsWith('lib:')) return lib.find((d) => d.type === dragging.slice(4))?.label ?? '';
-    const b = versionOf(s.content, s.editing).blocks.find((x) => x.id === dragging);
+    const b = versionOf(content, editing).blocks.find((x) => x.id === dragging);
     return b ? blockDefinition(b.type)?.label ?? '' : '';
-  }, [dragging, lib, s.content, s.editing]);
+  }, [dragging, lib, content, editing]);
 
   function onDragEnd(e: DragEndEvent) {
     setDragging(null);
@@ -721,13 +701,81 @@ export function EditorPage() {
     if (from >= 0 && overIndex >= 0) st.moveBlock(from, Math.min(overIndex, blocks.length - 1));
   }
 
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e: DragStartEvent) => setDragging(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
+      <div className={`editor-grid${live ? ' live' : ''}`}>
+        <aside className="panel-left" aria-label="Block library">
+          <h2>Blocks</h2>
+          <p className="muted small">Drag a block into the email, or press Add. Each one becomes your own copy to edit.</p>
+          <h3 className="lib-group">Basic blocks</h3>
+          <ul className="lib-list">{lib.filter((d) => d.category === 'shared').map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} compact={live} />)}</ul>
+          {lib.some((d) => d.category === content.settings.palette) && (
+            <>
+              <h3 className="lib-group">{paletteOf(content.settings.palette).label} blocks</h3>
+              <ul className="lib-list">{lib.filter((d) => d.category === content.settings.palette).map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} compact={live} />)}</ul>
+            </>
+          )}
+        </aside>
+        <section className="panel-center" aria-label="Email canvas"><Canvas canEdit={canAny} /></section>
+        <aside className="panel-right" aria-label="Properties"><Properties canEdit={canEdit} /></aside>
+        {live && <aside className="panel-live" aria-label="Live preview pane"><LivePane previewBase={previewBase} /></aside>}
+      </div>
+      <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>
+    </DndContext>
+  );
+}
+
+// ---------- Page ----------
+export function EditorPage() {
+  const { id = '' } = useParams();
+  const { can } = useSession();
+  const canEdit = can('campaign.edit');
+  const canAny = canEdit || can('html.custom'); // an Admin may only work on Custom HTML blocks
+  const s = useEditor();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<'segments' | 'email' | 'preview' | 'versions'>((location.state as { tab?: 'segments' } | null)?.tab ?? 'email'); // a new campaign opens on its Segments: who it is for comes first
+  // the "open on Audience" hint is for the first visit only: a reload goes back to the normal view
+  useEffect(() => { if (location.state) navigate(location.pathname, { replace: true, state: null }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [loadError, setLoadError] = useState('');
+  const [live, setLive] = useState(false);
+  const [audienceFields, setAudienceFields] = useState<string[]>([]);
+  const [availableFields, setAvailableFields] = useState<ContactField[]>([]);
+  const [segmentsRefresh, setSegmentsRefresh] = useState(0);
+  const [upgrading, setUpgrading] = useState(false);
+  useDerivedTestContacts(id, canEdit && s.status === 'draft' && s.campaignId === id, () => setSegmentsRefresh((n) => n + 1));
+
+  const reload = useCallback(async () => {
+    try {
+      useEditor.getState().load(await api<CampaignDto>('GET', `/api/campaigns/${id}`));
+      setLoadError('');
+    } catch (e) { setLoadError(errorText(e)); }
+  }, [id]);
+  useEffect(() => { void reload(); }, [reload]);
+  // the campaign's segment fields decide which segment versions are in use
+  useEffect(() => {
+    api<{ audience: { fields: string[] }; available: ContactField[] }>('GET', `/api/campaigns/${id}/audience`).then((a) => { setAudienceFields(a.audience.fields); setAvailableFields(a.available); }).catch(() => undefined);
+  }, [id, tab]);
+
+  useAutosave(id, canAny, canEdit);
+
+  async function upgrade() {
+    if (!window.confirm('Move this email to the multilingual editor? The Default becomes the English email and each language email gets its own saved revisions. Per-segment copies are kept read only. Nothing is deleted.')) return;
+    setUpgrading(true);
+    try {
+      if (!(await flushSave())) throw new Error('Fix the problem shown at the top first.');
+      await api('POST', `/api/campaigns/${id}/upgrade`, {});
+      window.location.assign(`/campaigns/${id}?tab=segments`);
+    } catch (e) { setLoadError(errorText(e)); setUpgrading(false); }
+  }
+
   async function rename() {
     const name = useEditor.getState().name.trim();
     if (!name) return reload();
     try { await api('PATCH', `/api/campaigns/${id}`, { name }); } catch { /* shown on next save */ }
   }
 
-  if (loadError) return <main className="page"><p className="error">{loadError}</p><Link to="/">Back to campaigns</Link></main>;
+  if (loadError) return <main className="page"><p className="error">{loadError}</p><Link to="/">Back to emails</Link></main>;
   if (s.campaignId !== id) return <main className="page"><p>Loading…</p></main>;
 
   const STATUS: Record<string, string> = {
@@ -742,10 +790,10 @@ export function EditorPage() {
     <AudienceCtx.Provider value={{ segmentFields, conditionFields: perLanguage ? availableFields : segmentFields, perLanguage }}>
     <div className="editor">
       <div className="editor-top">
-        <Link to="/" className="back">← Campaigns</Link>
+        <Link to="/" className="back">← Emails</Link>
         <input
           className="name-input"
-          aria-label="Campaign name"
+          aria-label="Email name"
           value={s.name}
           readOnly={!canEdit}
           maxLength={120}
@@ -770,6 +818,9 @@ export function EditorPage() {
             <span className="switch-text"><strong>Live preview</strong></span>
           </label>
         )}
+        {canEdit && s.status === 'draft' && (
+          <button type="button" disabled={upgrading} title="Moves this email to the multilingual editor: the Default becomes the English email and each language email keeps its own saved revisions. Nothing is deleted." onClick={() => void upgrade()}>Upgrade to the multilingual editor</button>
+        )}
         <div role="tablist" className="tabs">
           {(['segments', 'email', 'preview', 'versions'] as const).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
@@ -781,28 +832,7 @@ export function EditorPage() {
       </div>
 
       {tab === 'email' && <VersionBar audienceFields={audienceFields} canEdit={canEdit} />}
-      {tab === 'email' && (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e: DragStartEvent) => setDragging(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
-          <div className={`editor-grid${live ? ' live' : ''}`}>
-            <aside className="panel-left" aria-label="Block library">
-              <h2>Blocks</h2>
-              <p className="muted small">Drag a block into the email, or press Add. Each one becomes your own copy to edit.</p>
-              <h3 className="lib-group">Basic blocks</h3>
-              <ul className="lib-list">{lib.filter((d) => d.category === 'shared').map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} compact={live} />)}</ul>
-              {lib.some((d) => d.category === s.content.settings.palette) && (
-                <>
-                  <h3 className="lib-group">{paletteOf(s.content.settings.palette).label} blocks</h3>
-                  <ul className="lib-list">{lib.filter((d) => d.category === s.content.settings.palette).map((d) => <LibraryItem key={d.type} def={d} canEdit={canEdit} compact={live} />)}</ul>
-                </>
-              )}
-            </aside>
-            <section className="panel-center" aria-label="Email canvas"><Canvas canEdit={canAny} /></section>
-            <aside className="panel-right" aria-label="Properties"><Properties canEdit={canEdit} /></aside>
-            {live && <aside className="panel-live" aria-label="Live preview pane"><LivePane campaignId={id} /></aside>}
-          </div>
-          <DragOverlay>{dragging ? <div className="drag-chip">{activeLabel}</div> : null}</DragOverlay>
-        </DndContext>
-      )}
+      {tab === 'email' && <EditorGrid live={live} previewBase={`/api/campaigns/${id}/preview`} />}
 
       {tab === 'segments' && <div className="tab-body"><SegmentsPane campaignId={id} canEdit={canEdit && s.status === 'draft'} refreshKey={segmentsRefresh} onOpenVersion={() => setTab('email')} onContinue={() => setTab('email')} /></div>}
       {tab === 'preview' && <div className="tab-body"><PreviewPane campaignId={id} /><div className="seg-next-inline"><button type="button" className="primary" data-testid="next-tab" onClick={() => setTab('versions')}>Next →</button></div></div>}

@@ -26,6 +26,8 @@ const COALESCE_MS = 1000; // typing in the same field within a second is one und
 
 type EditorState = {
   campaignId: string | null;
+  /** Where the draft is saved. Default: the campaign's own draft; a language email saves to its own address. */
+  draftUrl: string | null;
   status: string;
   name: string;
   content: EmailContent;
@@ -42,7 +44,7 @@ type EditorState = {
   lastKey: string | null;
   lastKeyAt: number;
 
-  load: (dto: CampaignDto) => void;
+  load: (dto: CampaignDto, draftUrl?: string) => void;
   setName: (name: string) => void;
   select: (id: string | null) => void;
   /** Switch between the Default version and a segment's version. */
@@ -56,7 +58,7 @@ type EditorState = {
   clearDismissed: () => void;
   /** Creates the default email for one language (it holds every block any segment of that language needs). */
   addLanguageVersion: (languageField: string, value: string, copyFrom: string | null) => string | null;
-  /** How this campaign builds versions, and which field holds the language. */
+  /** How this email builds versions, and which field holds the language. */
   setVersioning: (v: Versioning) => void;
   setFocus: (focus: EditorState['focus']) => void;
   /** Sends a segment the email of a version (or the Default), or back to the automatic choice (null). */
@@ -112,6 +114,7 @@ export const useEditor = create<EditorState>((set, get) => {
 
   return {
     campaignId: null,
+    draftUrl: null,
     status: 'draft',
     name: '',
     content: emptyDoc(),
@@ -126,9 +129,10 @@ export const useEditor = create<EditorState>((set, get) => {
     lastKey: null,
     lastKeyAt: 0,
 
-    load: (dto) =>
+    load: (dto, draftUrl) =>
       set({
         campaignId: dto.id,
+        draftUrl: draftUrl ?? null,
         status: dto.status,
         name: dto.name,
         content: dto.draft.content,
@@ -350,7 +354,7 @@ export const useEditor = create<EditorState>((set, get) => {
     }
     set({ saveState: 'saving', message: '' });
     try {
-      const r = await api<SaveDraftResponse>('PUT', `/api/campaigns/${s.campaignId}/draft`, { content: sent, baseVersion: s.version });
+      const r = await api<SaveDraftResponse>('PUT', s.draftUrl ?? `/api/campaigns/${s.campaignId}/draft`, { content: sent, baseVersion: s.version });
       // If the user kept editing while this request was in flight, stay "dirty" so the newer content is saved next.
       set((cur) => ({ version: r.version, saveState: cur.content === sent ? 'saved' : 'dirty' }));
     } catch (e) {

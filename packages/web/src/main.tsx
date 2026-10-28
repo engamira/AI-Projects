@@ -7,7 +7,7 @@ import { AccountPage, ActivityPage, Shell, UsersPage, WideShell } from './pages/
 import { CampaignsPage } from './pages/campaigns';
 import { AudiencePage } from './pages/audience';
 import { AssetsPage, BrandPage } from './pages/brand';
-import { EditorPage } from './editor/EditorPage';
+import { EmailRoute } from './editor/EmailPage';
 import './styles.css';
 
 
@@ -30,7 +30,7 @@ function Gate() {
   return (
     <Routes>
       <Route element={<WideShell />}>
-        <Route path="/campaigns/:id" element={<EditorPage />} />
+        <Route path="/campaigns/:id" element={<EmailRoute />} />
       </Route>
       <Route element={<Shell />}>
         <Route path="/" element={<CampaignsPage />} />

@@ -44,7 +44,7 @@ export function LoginPage() {
 
   return (
     <Card title="Sign in">
-      <p className="muted">Campaign LEGO is invite-only. Ask an Admin if you need an account.</p>
+      <p className="muted">Email Lego is invite-only. Ask an Admin if you need an account.</p>
       <form onSubmit={submit}>
         <label htmlFor="email">Email</label>
         <input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />

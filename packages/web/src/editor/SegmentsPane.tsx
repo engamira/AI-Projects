@@ -10,7 +10,7 @@ export { modeOf } from './segmentData';
 
 // The Segments tab: how the versions are built, who the campaign is for, the test audience, and which email each segment receives.
 
-/** Add a field of your own (for example "Interest") while setting up a campaign; it is then available to every campaign. */
+/** Add a field of your own (for example "Interest") while setting up an email; it is then available to every email. */
 function AddFieldInline({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
@@ -67,7 +67,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
 
   function confirmFieldChange(next: string[]): boolean {
     const hasVersions = copies.length > 0;
-    const parts = [test.length ? 'removes the test audience made for this campaign' : '', hasVersions ? 'stops using the segment versions you wrote (they are kept, and used again if you choose the same fields)' : ''].filter(Boolean);
+    const parts = [test.length ? 'removes the test audience made for this email' : '', hasVersions ? 'stops using the segment versions you wrote (they are kept, and used again if you choose the same fields)' : ''].filter(Boolean);
     return next.join() === chosen.join() || parts.length === 0 || window.confirm(`Changing the fields ${parts.join(' and ')}. Continue?`);
   }
   function changeFields(next: string[]) {
@@ -131,7 +131,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   }
   async function removeAllTests() {
     const ownCopies = mode === 'copies' ? rowList.filter((r) => r.hasTest).flatMap((r) => copies.filter((v) => v.key === r.key)) : [];
-    if (!window.confirm(`Remove every test contact of this campaign? Their segments are removed from the lists, the email mapping and Preview as${ownCopies.length ? `, and the ${ownCopies.length} version${ownCopies.length === 1 ? '' : 's'} written for them are deleted` : ''}.`)) return;
+    if (!window.confirm(`Remove every test contact of this email? Their segments are removed from the lists, the email mapping and Preview as${ownCopies.length ? `, and the ${ownCopies.length} version${ownCopies.length === 1 ? '' : 's'} written for them are deleted` : ''}.`)) return;
     await guarded(async () => {
       await api('DELETE', `/api/campaigns/${campaignId}/test-audience`);
       const withTest = rowList.filter((r) => r.hasTest);
@@ -140,7 +140,7 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
   }
 
   function created(id: string | null) {
-    if (!id) setError('Could not add that version: it already exists, or the campaign has the most versions allowed.');
+    if (!id) setError('Could not add that version: it already exists, or the email has the most versions allowed.');
     else onOpenVersion();
   }
   function createCopy(vals: Cell[]) { setError(''); created(addVariant(chosen, vals, copyFrom || null)); }
@@ -227,10 +227,10 @@ export function SegmentsPane({ campaignId, canEdit, refreshKey, onOpenVersion, o
 
       {!noChoice && (
         <section className="seg-panel tint-who" aria-labelledby="seg-who-title">
-          <h2 id="seg-who-title">Who this campaign is for</h2>
+          <h2 id="seg-who-title">Who this email is for</h2>
           {mode === 'conditions'
             ? <p className="muted small">Choose the field that holds the language. Each language gets its own email; the rules on its blocks split it into more segments.</p>
-            : <p className="muted small">Choose the fields that split this campaign's audience into segments, for example Country and Language. A segment is named from its values, such as UAE-en or EG-ar, and those names appear in Preview and test sends.</p>}
+            : <p className="muted small">Choose the fields that split this email's audience into segments, for example Country and Language. A segment is named from its values, such as UAE-en or EG-ar, and those names appear in Preview and test sends.</p>}
           <SegmentFieldPicker available={info?.available ?? []} chosen={chosen} max={mode === 'conditions' ? 1 : undefined} disabled={!canEdit || busy} onChange={changeFields} idPrefix="campaign-seg" />
           {mode === 'copies' && canEdit && can('audience.manage') && <AddFieldInline onAdded={() => void guarded(async () => undefined)} />}
           {chosen.length === 0 && <p className="muted">Pick {mode === 'conditions' ? 'the language field' : 'at least one field'} to continue.</p>}

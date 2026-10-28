@@ -15,13 +15,13 @@ const testBody = z.object({
 });
 
 export function campaignAudienceRoutes(app: FastifyInstance, db: Db): void {
-  const notFound = (reply: FastifyReply) => reply.status(404).send({ error: 'not_found', message: 'Campaign not found.' });
+  const notFound = (reply: FastifyReply) => reply.status(404).send({ error: 'not_found', message: 'Email not found.' });
   /** The campaign's status, or undefined when it does not exist. Audience set-up can only change while it is a draft. */
   const statusOf = async (id: string): Promise<string | undefined> =>
     (await db.query<{ status: string }>('SELECT status FROM campaign WHERE id = $1 AND workspace_id = $2', [id, DEFAULT_WORKSPACE_ID])).rows[0]?.status;
-  const locked = (reply: FastifyReply) => reply.status(409).send({ error: 'locked', message: 'This campaign can no longer be edited.' });
+  const locked = (reply: FastifyReply) => reply.status(409).send({ error: 'locked', message: 'This email can no longer be edited.' });
 
-  // The fields that segment this campaign, the fields that can be chosen, and the generated test audience.
+  // The fields that segment this email, the fields that can be chosen, and the generated test audience.
   app.get<{ Params: { id: string } }>('/api/campaigns/:id/audience', { config: { access: 'campaign.view' } }, async (req, reply): Promise<{ audience: CampaignAudienceDto; available: ContactField[]; test: TestContactDto[] } | FastifyReply> => {
     const { id } = idParam.parse(req.params);
     if (!(await statusOf(id))) return notFound(reply);

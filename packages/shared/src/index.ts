@@ -126,6 +126,7 @@ export * from './content.js';
 export * from './personalize.js';
 export * from './presets.js';
 export * from './versions.js';
+export * from './languages.js';
 export * from './conditions.js';
 
 import type { BlockDefinition } from './blocks.js';
@@ -141,10 +142,11 @@ export type CampaignSummary = {
   createdByName: string | null;
   updatedAt: string;
   revisionCount: number;
+  model?: 'legacy' | 'v2';
 };
 
 export type DraftDto = { content: EmailContent; version: number; hash: string; updatedAt: string };
-export type CampaignDto = { id: string; name: string; status: string; draft: DraftDto };
+export type CampaignDto = { id: string; name: string; status: string; model: 'legacy' | 'v2'; draft: DraftDto };
 export type SaveDraftRequest = { content: EmailContent; baseVersion: number };
 export type SaveDraftResponse = { version: number; hash: string; updatedAt: string };
 

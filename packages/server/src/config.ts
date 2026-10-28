@@ -8,7 +8,7 @@ export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCKOUT_MS = 15 * 60 * 1000;
 
 export const RECOVERY_CODE_COUNT = 10;
-export const TOTP_ISSUER = 'Campaign LEGO';
+export const TOTP_ISSUER = 'Email Lego';
 
 export type AppConfig = {
   baseUrl: string; // public origin of the app, e.g. https://example.onrender.com

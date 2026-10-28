@@ -49,7 +49,7 @@ try {
   if (shots) await a.screenshot({ path: path.join(shots, '2-verify.png') });
   await a.getByLabel('Authenticator code').fill(currentCode(admin.totpSecret!));
   await a.getByRole('button', { name: 'Sign in' }).click();
-  await a.getByRole('heading', { name: 'Campaigns', exact: true }).waitFor();
+  await a.getByRole('heading', { name: 'Emails', exact: true }).waitFor();
   ok('admin signs in with password and authenticator code');
 
   // ---- Admin creates a Builder and gets a one-time link
@@ -101,14 +101,14 @@ try {
   if (shots) await b.screenshot({ path: path.join(shots, '4-codes-mobile.png'), fullPage: true });
   await b.getByLabel('I have saved these codes').check();
   await continueBtn.click();
-  await b.getByRole('heading', { name: 'Campaigns', exact: true }).waitFor();
+  await b.getByRole('heading', { name: 'Emails', exact: true }).waitFor();
   await b.getByText('Signed in as Bella Builder').waitFor();
   ok('builder enrolls an authenticator and receives 10 recovery codes');
 
   assert((await b.getByRole('link', { name: 'Users' }).count()) === 0, 'Builder sees no Users menu');
   b.on('dialog', (d) => void d.dismiss());
   await b.goto(`${BASE}/admin/users`);
-  await b.getByRole('heading', { name: 'Campaigns', exact: true }).waitFor(); // redirected home: no access
+  await b.getByRole('heading', { name: 'Emails', exact: true }).waitFor(); // redirected home: no access
   ok('builder cannot open the Users page (redirected home)');
   if (shots) await b.screenshot({ path: path.join(shots, '6-builder-home-mobile.png') });
 

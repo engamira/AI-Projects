@@ -31,6 +31,7 @@ import { latestProfile } from '../brand.js';
 import type { AppConfig } from '../config.js';
 import { sha256 } from '../crypto.js';
 import { DEFAULT_WORKSPACE_ID, withTransaction, type Db, type Queryable } from '../db.js';
+import { duplicateEmails } from '../emails.js';
 import { renderEmail } from '../render.js';
 import { logActivity } from '../services.js';
 
@@ -44,28 +45,30 @@ type CampaignRow = {
   draft_version: number;
   draft_hash: string;
   updated_at: Date;
+  model: 'legacy' | 'v2';
 };
 
 const toDto = (r: CampaignRow): CampaignDto => ({
   id: r.id,
   name: r.name,
   status: r.status,
+  model: r.model,
   draft: { content: r.draft_content, version: r.draft_version, hash: r.draft_hash, updatedAt: r.updated_at.toISOString() },
 });
 
 const idParam = z.object({ id: z.string().uuid() });
 const revParams = z.object({ id: z.string().uuid(), rid: z.string().uuid() });
 const nameBody = z.object({ name: z.string().trim().min(1, 'Enter a name.').max(120, 'Name is too long.') });
-const createBody = nameBody.extend({ palette: z.enum(PALETTE_IDS).default('travel'), starter: z.boolean().default(false) });
+const createBody = nameBody.extend({ palette: z.enum(PALETTE_IDS).default('travel'), starter: z.boolean().default(false), model: z.enum(['legacy', 'v2']).default('legacy') });
 const labelBody = z.object({ label: z.string().trim().max(120).optional() });
 const draftBody = z.object({ content: z.unknown(), baseVersion: z.number().int().min(1) });
 
 export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig): void {
-  const notFound = (reply: FastifyReply) => reply.status(404).send({ error: 'not_found', message: 'Campaign not found.' });
+  const notFound = (reply: FastifyReply) => reply.status(404).send({ error: 'not_found', message: 'Email not found.' });
 
   async function getCampaign(q: Queryable, id: string, lock = false): Promise<CampaignRow | undefined> {
     const r = await q.query<CampaignRow>(
-      `SELECT id, name, status, draft_content, draft_version, draft_hash, updated_at FROM campaign
+      `SELECT id, name, status, model, draft_content, draft_version, draft_hash, updated_at FROM campaign
         WHERE id = $1 AND workspace_id = $2 ${lock ? 'FOR UPDATE' : ''}`,
       [id, DEFAULT_WORKSPACE_ID],
     );
@@ -92,15 +95,17 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     return number;
   }
 
-  async function createCampaign(q: Queryable, userId: string, name: string, content: EmailContent, kind: 'created' | 'duplicate', label?: string): Promise<CampaignRow> {
+  async function createCampaign(q: Queryable, userId: string, name: string, content: EmailContent, kind: 'created' | 'duplicate', label?: string, model: 'legacy' | 'v2' = 'legacy'): Promise<CampaignRow> {
     const r = await q.query<CampaignRow>(
-      `INSERT INTO campaign (workspace_id, name, draft_content, draft_hash, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $5)
-       RETURNING id, name, status, draft_content, draft_version, draft_hash, updated_at`,
+      `INSERT INTO campaign (workspace_id, name, draft_content, draft_hash, created_by, updated_by, model)
+       VALUES ($1, $2, $3, $4, $5, $5, '${model}')
+       RETURNING id, name, status, model, draft_content, draft_version, draft_hash, updated_at`,
       [DEFAULT_WORKSPACE_ID, name, JSON.stringify(content), hashOf(content), userId],
     );
     const row = r.rows[0]!;
-    await addRevision(q, row.id, userId, kind, content, { label });
+    // an email made with the language model keeps its history per language email, not here
+    if (model === 'legacy') await addRevision(q, row.id, userId, kind, content, { label });
+    else await q.query(`INSERT INTO campaign_language (campaign_id, language_id, position) VALUES ($1, 'en', 0)`, [row.id]);
     return row;
   }
 
@@ -111,15 +116,16 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
 
   // ---- campaigns ----
   app.get('/api/campaigns', { config: { access: 'campaign.view' } }, async (): Promise<CampaignSummary[]> => {
-    const r = await db.query<{ id: string; name: string; status: string; updated_at: Date; created_by_name: string | null; revision_count: string }>(
-      `SELECT c.id, c.name, c.status, c.updated_at, u.name AS created_by_name,
-              (SELECT count(*) FROM campaign_revision r WHERE r.campaign_id = c.id) AS revision_count
+    const r = await db.query<{ id: string; name: string; status: string; model: 'legacy' | 'v2'; updated_at: Date; created_by_name: string | null; revision_count: string }>(
+      `SELECT c.id, c.name, c.status, c.model, c.updated_at, u.name AS created_by_name,
+              CASE WHEN c.model = 'v2' THEN (SELECT count(*) FROM email_revision er JOIN email_variant ev ON ev.id = er.variant_id WHERE ev.campaign_id = c.id)
+                   ELSE (SELECT count(*) FROM campaign_revision r WHERE r.campaign_id = c.id) END AS revision_count
          FROM campaign c LEFT JOIN app_user u ON u.id = c.created_by
         WHERE c.workspace_id = $1 ORDER BY c.updated_at DESC`,
       [DEFAULT_WORKSPACE_ID],
     );
     return r.rows.map((x) => ({
-      id: x.id, name: x.name, status: x.status, createdByName: x.created_by_name,
+      id: x.id, name: x.name, status: x.status, model: x.model, createdByName: x.created_by_name,
       updatedAt: x.updated_at.toISOString(), revisionCount: Number(x.revision_count),
     }));
   });
@@ -138,16 +144,16 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       return { kind: 'ok' as const };
     });
     if (result.kind === 'missing') return notFound(reply);
-    if (result.kind === 'locked') return reply.status(409).send({ error: 'not_deletable', message: `A campaign that is "${campaignStatus(result.status).label}" cannot be deleted.` });
+    if (result.kind === 'locked') return reply.status(409).send({ error: 'not_deletable', message: `An email that is "${campaignStatus(result.status).label}" cannot be deleted.` });
     return reply.status(204).send();
   });
 
   app.post('/api/campaigns', { config: { access: 'campaign.edit' } }, async (req, reply) => {
-    const { name, palette, starter } = createBody.parse(req.body);
+    const { name, palette, starter, model } = createBody.parse(req.body);
     const userId = req.auth!.user.id;
     const row = await withTransaction(db, async (q) => {
-      const c = await createCampaign(q, userId, name, starter ? starterContent(palette) : emptyContent(palette), 'created');
-      await logActivity(q, { actorId: userId, action: 'campaign.created', entityType: 'campaign', entityId: c.id, details: { name, palette, starter } });
+      const c = await createCampaign(q, userId, name, starter ? starterContent(palette) : emptyContent(palette), 'created', undefined, model);
+      await logActivity(q, { actorId: userId, action: 'campaign.created', entityType: 'campaign', entityId: c.id, details: { name, palette, starter, model } });
       return c;
     });
     return reply.status(201).send(toDto(row));
@@ -184,9 +190,9 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
 
     const current = await getCampaign(db, id);
     if (!current) return notFound(reply);
-    if (current.status !== 'draft') return reply.status(409).send({ error: 'locked', message: 'This campaign can no longer be edited.' });
+    if (current.status !== 'draft') return reply.status(409).send({ error: 'locked', message: 'This email can no longer be edited.' });
     if (v.content.settings.palette !== current.draft_content.settings.palette) {
-      return reply.status(400).send({ error: 'palette_locked', message: 'The template colors are fixed when a campaign is created and cannot be changed.' });
+      return reply.status(400).send({ error: 'palette_locked', message: 'The template colors are fixed when an email is created and cannot be changed.' });
     }
     const refusal = roleEditRefusal(req.auth!.user.role, current.draft_content, v.content);
     if (refusal) return reply.status(403).send({ error: 'forbidden_edit', message: refusal });
@@ -220,7 +226,8 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       const src = await getCampaign(q, id);
       if (!src) return null;
       // Fresh block ids: the copy shares nothing with the original.
-      const c = await createCampaign(q, userId, `Copy of ${src.name}`.slice(0, 120), cloneContent(src.draft_content, true), 'duplicate', `Copied from "${src.name}"`);
+      const c = await createCampaign(q, userId, `Copy of ${src.name}`.slice(0, 120), cloneContent(src.draft_content, true), 'duplicate', `Copied from "${src.name}"`, src.model);
+      if (src.model === 'v2') await duplicateEmails(q, id, c.id, userId);
       await logActivity(q, { actorId: userId, action: 'campaign.duplicated', entityType: 'campaign', entityId: c.id, details: { from: id } });
       return c;
     });
@@ -286,7 +293,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     });
     if (result === 'missing') return notFound(reply);
     if (result === 'html') return reply.status(403).send({ error: 'forbidden_edit', message: 'That version has different Custom HTML blocks. Only an Admin can change those, so ask an Admin to restore it.' });
-    if (result === 'locked') return reply.status(409).send({ error: 'locked', message: 'This campaign can no longer be edited.' });
+    if (result === 'locked') return reply.status(409).send({ error: 'locked', message: 'This email can no longer be edited.' });
     return toDto((await getCampaign(db, id))!);
   });
 

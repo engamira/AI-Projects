@@ -119,7 +119,8 @@ try {
 
   // ---- a campaign opens on Segments; the build choice comes first and decides what follows
   await page.goto(`${BASE}/`);
-  await page.getByLabel('Campaign name').fill('Segment test campaign');
+  await page.getByLabel('Email name').fill('Segment test campaign');
+  await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('heading', { name: 'How will you build the versions?' }).waitFor(); // a new campaign opens on Segments: who it is for comes first
   const tabNames = await page.getByRole('tab').allInnerTexts();
@@ -215,7 +216,8 @@ try {
 
   // ---- choice 1: one email per language, with show/hide conditions that add segments
   await page.goto(`${BASE}/`);
-  await page.getByLabel('Campaign name').fill('Language campaign');
+  await page.getByLabel('Email name').fill('Language campaign');
+  await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('radio', { name: /One email per language/ }).click();
   await page.locator('#campaign-seg-0').waitFor();
@@ -321,10 +323,10 @@ try {
   // ---- QA reviewers have no Audience
   const qa = await open('qa_reviewer');
   await qa.goto(`${BASE}/`);
-  await qa.getByRole('heading', { name: 'Campaigns', exact: true }).waitFor();
+  await qa.getByRole('heading', { name: 'Emails', exact: true }).waitFor();
   assert((await qa.getByRole('link', { name: 'Audience' }).count()) === 0, 'no Audience link for a QA reviewer');
   await qa.goto(`${BASE}/audience`);
-  await qa.getByRole('heading', { name: 'Campaigns', exact: true }).waitFor();
+  await qa.getByRole('heading', { name: 'Emails', exact: true }).waitFor();
   ok('a QA reviewer has no Audience page');
 
   console.log(`\n${passed} audience checks passed`);

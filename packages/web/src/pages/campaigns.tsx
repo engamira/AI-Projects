@@ -11,6 +11,7 @@ export function CampaignsPage() {
   const [name, setName] = useState('');
   const [palette, setPalette] = useState<PaletteId>('travel');
   const [starter, setStarter] = useState(true);
+  const [multilingual, setMultilingual] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => setList(await api<CampaignSummary[]>('GET', '/api/campaigns')), []);
@@ -20,8 +21,9 @@ export function CampaignsPage() {
     e.preventDefault();
     setError('');
     try {
-      const c = await api<CampaignDto>('POST', '/api/campaigns', { name, palette, starter });
-      nav(`/campaigns/${c.id}`, { state: { tab: 'segments' } }); // set up who it is for first: the segments tell which languages and versions are needed
+      const c = await api<CampaignDto>('POST', '/api/campaigns', { name, palette, starter, model: multilingual ? 'v2' : 'legacy' });
+      // set up the languages first; an email made with the previous editor opens on its Segments tab as before
+      if (multilingual) nav(`/campaigns/${c.id}?tab=segments`); else nav(`/campaigns/${c.id}`, { state: { tab: 'segments' } });
     } catch (err) { setError(errorText(err)); }
   }
   async function duplicate(id: string) {
@@ -43,13 +45,13 @@ export function CampaignsPage() {
 
   return (
     <>
-      <h1>Campaigns</h1>
+      <h1>Emails</h1>
       <p className="muted">Signed in as {me?.user?.name}.</p>
       {can('campaign.edit') && (
         <div className="card wide">
-          <h2 style={{ marginTop: 0 }}>New campaign</h2>
+          <h2 style={{ marginTop: 0 }}>New email</h2>
           <form onSubmit={create} className="row">
-            <div><label htmlFor="cname">Campaign name</label><input id="cname" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Summer fares newsletter" /></div>
+            <div><label htmlFor="cname">Email name</label><input id="cname" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Summer fares newsletter" /></div>
             <div>
               <label htmlFor="cpalette">Template colors</label>
               <select id="cpalette" value={palette} onChange={(e) => setPalette(e.target.value as PaletteId)}>
@@ -66,12 +68,16 @@ export function CampaignsPage() {
               <small>{starter ? 'On: the email opens with a ready-made layout to edit' : 'Off: the email opens empty'}</small>
             </span>
           </label>
+          <label className="check" style={{ margin: '4px 0 8px' }}>
+            <input type="checkbox" checked={multilingual} onChange={(e) => setMultilingual(e.target.checked)} />
+            <span><strong>Use the multilingual editor</strong> <span className="muted small">(one email per language, each with its own saved revisions). Untick to use the previous editor.</span></span>
+          </label>
           <p className="muted small" style={{ marginBottom: 0 }}>Colors are set by the template you choose and cannot be changed later. Every block in a starter layout is your own copy to edit, replace or delete.</p>
         </div>
       )}
       {error && <p className="error" role="alert">{error}</p>}
-      <h2>All campaigns</h2>
-      {list && list.length === 0 && <p className="muted">No campaigns yet.</p>}
+      <h2>All emails</h2>
+      {list && list.length === 0 && <p className="muted">No emails yet.</p>}
       {list && list.length > 0 && (
         <div className="table-scroll">
           <table>
@@ -79,7 +85,7 @@ export function CampaignsPage() {
             <tbody>
               {list.map((c) => (
                 <tr key={c.id}>
-                  <td><Link to={`/campaigns/${c.id}`}>{c.name}</Link></td>
+                  <td><Link to={`/campaigns/${c.id}`}>{c.name}</Link>{c.model === 'v2' ? <span className="badge" style={{ marginLeft: 8 }}>Languages</span> : null}</td>
                   <td><span className={`badge status-${campaignStatus(c.status).tone}`} title={campaignStatus(c.status).hint}>{campaignStatus(c.status).label}</span></td>
                   <td>{c.revisionCount}</td>
                   <td>{c.createdByName ?? '—'}</td>

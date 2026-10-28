@@ -62,10 +62,11 @@ try {
 
   // ---- create a campaign
   await page.goto(`${BASE}/`);
-  await page.getByLabel('Campaign name').fill('E2E summer sale');
+  await page.getByLabel('Email name').fill('E2E summer sale');
   await page.getByLabel(/Start from the ready-made/).uncheck(); // these tests build from an empty email
   assert((await page.getByLabel('Template colors').inputValue()) === 'travel', 'Travel colors are the default choice');
   assert((await page.getByLabel('Template colors').locator('option').allInnerTexts()).join() === 'Travel,Events,Cosmetics', 'three template color sets to choose from');
+  await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('heading', { name: 'How will you build the versions?' }).waitFor(); // a new campaign opens on Segments; go on to the email
   await page.getByRole('tab', { name: 'Email' }).click();
@@ -161,9 +162,10 @@ try {
 
   // ---- library originals and other emails are unchanged
   await page.goto(`${BASE}/`);
-  await page.getByLabel('Campaign name').fill('Second email');
+  await page.getByLabel('Email name').fill('Second email');
   await page.getByLabel(/Start from the ready-made/).uncheck();
   await page.getByLabel('Template colors').selectOption('events');
+  await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('heading', { name: 'How will you build the versions?' }).waitFor(); // a new campaign opens on Segments; go on to the email
   await page.getByRole('tab', { name: 'Email' }).click();
@@ -226,7 +228,7 @@ try {
   await page.goto(`${BASE}/`);
   await page.getByRole('row', { name: /E2E summer sale/ }).getByRole('button', { name: 'Duplicate' }).click();
   await blocks.first().waitFor();
-  assert((await page.getByLabel('Campaign name').inputValue()) === 'Copy of E2E summer sale', 'copy is named');
+  assert((await page.getByLabel('Email name').inputValue()) === 'Copy of E2E summer sale', 'copy is named');
   assert((await order()) === 'image,button,divider,hero,text', 'copy has the same blocks');
   await blocks.nth(3).click();
   await page.getByLabel('Headline', { exact: true }).fill('Changed only in the copy');
@@ -239,9 +241,10 @@ try {
 
   // ---- ready-made layout and template-specific blocks
   await page.goto(`${BASE}/`);
-  await page.getByLabel('Campaign name').fill('Events invitation');
+  await page.getByLabel('Email name').fill('Events invitation');
   await page.getByLabel('Template colors').selectOption('events');
   assert(await page.getByLabel(/Start from the ready-made Events layout/).isChecked(), 'the ready-made layout is on by default');
+  await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('heading', { name: 'How will you build the versions?' }).waitFor(); // a new campaign opens on Segments; go on to the email
   await page.getByRole('tab', { name: 'Email' }).click();
@@ -302,7 +305,7 @@ try {
   for (const role of ['admin', 'qa_reviewer'] as const) {
     const { page: other } = await openAs(browser, role);
     await other.goto(`${BASE}/`);
-    assert((await other.getByLabel('Campaign name').count()) === 0, `${role} sees no "new campaign" form`);
+    assert((await other.getByLabel('Email name').count()) === 0, `${role} sees no "new campaign" form`);
     await other.getByRole('link', { name: 'E2E summer sale', exact: true }).click();
     await other.getByText(role === 'admin' ? 'Custom HTML only' : 'View only').waitFor();
     assert(await other.getByRole('button', { name: 'Add Hero banner to the end of the email' }).isDisabled(), `${role}: Add buttons are disabled`);
@@ -341,7 +344,7 @@ try {
   // ---- phone-sized screen has no sideways scrolling on the campaign list
   const { page: phone } = await openAs(browser, 'builder', { width: 390, height: 844 });
   await phone.goto(`${BASE}/`);
-  await phone.getByRole('heading', { name: 'Campaigns', exact: true }).waitFor();
+  await phone.getByRole('heading', { name: 'Emails', exact: true }).waitFor();
   assert(!(await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), 'no horizontal scroll on a phone');
   ok('campaign list fits a phone screen');
 

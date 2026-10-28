@@ -294,7 +294,7 @@ export function renderBlock(block: BlockInstance, ctx: Ctx): string {
 }
 
 export type BrandParts = { header: Props; footer: Props };
-export type RenderOptions = { baseUrl?: string; brand?: BrandParts; /** Extra field names (your own contact fields) that are valid in {{placeholders}}. */ knownFields?: string[] };
+export type RenderOptions = { /** The language of the email: sets lang, and mirrors the layout for right-to-left languages. */ language?: { locale: string; direction: 'ltr' | 'rtl' }; baseUrl?: string; brand?: BrandParts; /** Extra field names (your own contact fields) that are valid in {{placeholders}}. */ knownFields?: string[] };
 
 /** Pictures from the asset library are stored as "asset:<id>"; emails need real web addresses. */
 function resolveAssets<T>(value: T, baseUrl: string): T {
@@ -315,8 +315,14 @@ export function buildMjml(input: EmailContent, opts: RenderOptions = {}): string
   const ctx: Ctx = { width: st.contentWidth, c };
   // Every email of a template starts with that template's shared header and ends with its shared footer.
   const brand = resolveAssets(opts.brand ?? defaultBrand(c.id), baseUrl);
-  const body = [RENDERERS.header!(brand.header, ctx), ...blocks.map((x) => renderBlock(x, ctx)), RENDERERS.footer!(brand.footer, ctx)].join('\n');
-  return `<mjml>
+  const rtl = opts.language?.direction === 'rtl';
+  let body = [RENDERERS.header!(brand.header, ctx), ...blocks.map((x) => renderBlock(x, ctx)), RENDERERS.footer!(brand.footer, ctx)].join('\n');
+  if (rtl) {
+    // Right-to-left: columns run right to left and left/right alignment is mirrored (centered stays centered).
+    body = body.replace(/<mj-section /g, '<mj-section direction="rtl" ').replace(/\balign="(left|right)"/g, (_m, d: string) => `align="${d === 'left' ? 'right' : 'left'}"`);
+  }
+  const root = opts.language ? `<mjml lang="${esc(opts.language.locale)}"${rtl ? ' dir="rtl"' : ''}>` : '<mjml>';
+  return `${root}
 <mj-head>
   <mj-title>${esc(st.subject)}</mj-title>
   <mj-preview>${esc(st.preheader)}</mj-preview>

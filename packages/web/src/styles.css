@@ -401,3 +401,14 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 
 .note-box { background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; padding: 6px 12px; margin: 8px 0; }
 .note-box p { margin: 6px 0; }
+
+/* language emails */
+.lang-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.lang-chip { border-radius: 999px; padding: 4px 14px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.9rem; transition: background .17s, border-color .17s; }
+.lang-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.lang-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.email-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.email-head h1 { font-size: 1.25rem; margin: 0; margin-right: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chip { padding: 3px 12px; border-radius: 999px; background: var(--canvas-bg); color: var(--text); font-size: 0.88rem; }
+.chip.first { background: var(--accent); color: var(--accent-text); }
