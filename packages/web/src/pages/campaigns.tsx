@@ -53,7 +53,7 @@ export function CampaignsPage() {
           <form onSubmit={create} className="row">
             <div><label htmlFor="cname">Email name</label><input id="cname" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Summer fares newsletter" /></div>
             <div>
-              <label htmlFor="cpalette">Template colors</label>
+              <label htmlFor="cpalette">Template</label>
               <select id="cpalette" value={palette} onChange={(e) => setPalette(e.target.value as PaletteId)}>
                 {PALETTE_IDS.map((id) => <option key={id} value={id}>{PALETTES[id].label}</option>)}
               </select>

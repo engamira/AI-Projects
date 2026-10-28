@@ -94,6 +94,7 @@ function Topbar() {
           {can('brand.manage') && <NavLink to="/admin/brand">Brand</NavLink>}
           {can('users.manage') && <NavLink to="/admin/users">Users</NavLink>}
           {can('activity.view') && <NavLink to="/admin/activity">Activity</NavLink>}
+          {(can('qa.review') || can('rules.manage')) && <NavLink to="/settings">App Settings</NavLink>}
           <NavLink to="/account">Account</NavLink>
         </nav>
         <span className="muted">{me?.user?.name} · {me?.user ? ROLE_LABELS[me.user.role] : ''}</span>

@@ -27,13 +27,15 @@ export const CAPABILITIES = [
   'campaign.send',
   'qa.review',
   'qa.approve',
+  /** Hide a kind of finding for every email (App Settings shows and can revoke these rules). */
+  'qa.suppress_global',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
   admin: ['users.manage', 'activity.view', 'brand.manage', 'rules.manage', 'html.custom', 'assets.manage', 'audience.manage', 'audience.settings', 'campaign.view', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
   builder: ['assets.manage', 'audience.manage', 'campaign.view', 'campaign.edit', 'campaign.submit', 'campaign.delete', 'campaign.test_send', 'campaign.send'],
-  qa_reviewer: ['campaign.view', 'qa.review', 'qa.approve'],
+  qa_reviewer: ['campaign.view', 'qa.review', 'qa.approve', 'qa.suppress_global'],
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -128,6 +130,7 @@ export * from './presets.js';
 export * from './versions.js';
 export * from './languages.js';
 export * from './rules.js';
+export * from './qa.js';
 export * from './conditions.js';
 
 import type { BlockDefinition } from './blocks.js';

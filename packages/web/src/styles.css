@@ -431,3 +431,8 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .pol.positive { background: #e0f3e8; color: #14633a; }
 .pol.negative { background: #fde2e0; color: #7a1d17; }
 .pol.baseline { background: var(--canvas-bg); color: var(--muted); }
+
+/* QA */
+.ignore-box { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px; display: grid; gap: 6px; background: var(--surface); }
+.ignore-box label { display: grid; gap: 2px; font-size: 0.85rem; }
+td textarea { width: 100%; min-width: 220px; }

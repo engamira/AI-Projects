@@ -39,7 +39,6 @@ try {
   await page.getByRole('heading', { name: 'Languages list' }).waitFor();
   assert((await page.getByTestId('language-chips').innerText()).trim() === 'English', 'only English at first');
   assert((await page.getByRole('tab').allInnerTexts()).join('|') === 'Segments|Emails|Audiences|Preview|Versions|QA|Builder to Check', 'the seven tabs in order');
-  assert(await page.getByRole('tab', { name: 'QA' }).isDisabled(), 'later tabs are not available yet');
   ok('a new email opens on Segments with English only and the seven tabs');
 
   // ---- languages: bad input is refused, a list is applied, English stays first

@@ -8,6 +8,7 @@ import { CampaignsPage } from './pages/campaigns';
 import { AudiencePage } from './pages/audience';
 import { AssetsPage, BrandPage } from './pages/brand';
 import { EmailRoute } from './editor/EmailPage';
+import { SettingsPage } from './pages/settings';
 import './styles.css';
 
 
@@ -35,6 +36,7 @@ function Gate() {
       <Route element={<Shell />}>
         <Route path="/" element={<CampaignsPage />} />
         <Route path="/account" element={<AccountPage />} />
+        {(can('qa.review') || can('rules.manage')) && <Route path="/settings" element={<SettingsPage />} />}
         {can('assets.manage') && <Route path="/assets" element={<AssetsPage />} />}
         {can('audience.manage') && <Route path="/audience" element={<AudiencePage />} />}
         {can('brand.manage') && <Route path="/admin/brand" element={<BrandPage />} />}

@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { useSession } from '../session';
 import { AudienceCtx, DESKTOP_WIDTHS, DeviceFrame, EditorGrid, EditorPage, PHONE_WIDTHS, useAutosave } from './EditorPage';
 import { diffRevisions } from './revisionDiff';
+import { CheckTab, QaTab } from './QaTabs';
 import { flushSave, useEditor } from './store';
 
 // An email made with the language model: Segments (languages and their emails) and Emails (the editor of one language email).
@@ -17,8 +18,8 @@ const TABS: { id: TabId; label: string; ready: boolean }[] = [
   { id: 'audiences', label: 'Audiences', ready: true },
   { id: 'preview', label: 'Preview', ready: true },
   { id: 'versions', label: 'Versions', ready: true },
-  { id: 'qa', label: 'QA', ready: false },
-  { id: 'check', label: 'Builder to Check', ready: false },
+  { id: 'qa', label: 'QA', ready: true },
+  { id: 'check', label: 'Builder to Check', ready: true },
 ];
 
 /** The route of an email: the language editor for emails made with it, the previous editor for older ones. */
@@ -82,8 +83,10 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
         {tab === 'segments' && emails && <div className="tab-body"><SegmentsTab campaignId={campaign.id} emails={emails} canEdit={canEdit} refresh={refresh} onOpen={(l) => go('emails', l)} /></div>}
         {tab === 'preview' && emails && <div className="tab-body"><PreviewTab campaignId={campaign.id} emails={emails} lang={lang} aud={params.get('aud')} rev={params.get('rev')} go={go} /></div>}
         {tab === 'versions' && emails && <div className="tab-body"><VersionsTab emails={emails} lang={lang} canEdit={canEdit} canSubmit={can('campaign.submit') && campaign.status === 'draft'} refresh={refresh} go={go} /></div>}
+        {tab === 'qa' && emails && <div className="tab-body"><QaTab campaignId={campaign.id} emails={emails} lang={lang} go={go} /></div>}
+        {tab === 'check' && emails && <div className="tab-body"><CheckTab campaignId={campaign.id} emails={emails} go={go} /></div>}
         {tab === 'audiences' && emails && <div className="tab-body"><AudiencesTab campaignId={campaign.id} emails={emails} fields={fields} onEmails={() => go('emails')} onNext={() => go('preview')} /></div>}
-        {tab === 'emails' && emails && <EmailsTab emails={emails} lang={lang} canEdit={canEdit} refresh={refresh} onPick={(l) => go('emails', l)} onSegments={() => go('segments')} onNext={() => go('audiences')} />}
+        {tab === 'emails' && emails && <EmailsTab emails={emails} lang={lang} canEdit={canEdit} refresh={refresh} onPick={(l) => go('emails', l)} onSegments={() => go('segments')} onNext={() => go('audiences')} selectBlock={params.get('block')} />}
         {!emails && <div className="tab-body"><p>Loading…</p></div>}
       </div>
     </AudienceCtx.Provider>
@@ -189,8 +192,8 @@ function SegmentsTab({ campaignId, emails, canEdit, refresh, onOpen }: { campaig
 
 // ---------------- Emails ----------------
 
-function EmailsTab({ emails, lang, canEdit, refresh, onPick, onSegments, onNext }: {
-  emails: CampaignEmails; lang: string; canEdit: boolean; refresh: () => Promise<void>; onPick: (l: string) => void; onSegments: () => void; onNext: () => void;
+function EmailsTab({ emails, lang, canEdit, refresh, onPick, onSegments, onNext, selectBlock }: {
+  emails: CampaignEmails; lang: string; canEdit: boolean; refresh: () => Promise<void>; onPick: (l: string) => void; onSegments: () => void; onNext: () => void; selectBlock: string | null;
 }) {
   const { can } = useSession();
   const selected = emails.languages.find((l) => l.id === lang && l.variant) ?? emails.languages.find((l) => l.variant);
@@ -205,12 +208,12 @@ function EmailsTab({ emails, lang, canEdit, refresh, onPick, onSegments, onNext 
       </div>
       {!selected?.variant
         ? <div className="tab-body"><p className="muted">No email has been created yet. <button type="button" className="link" onClick={onSegments}>Create the English email in Segments</button>.</p></div>
-        : <VariantEditor key={selected.variant.id} variantId={selected.variant.id} title={selected.emailName} canEdit={canEdit} canAny={canEdit || can('html.custom')} onSaved={refresh} onNext={onNext} />}
+        : <VariantEditor key={selected.variant.id} variantId={selected.variant.id} title={selected.emailName} canEdit={canEdit} canAny={canEdit || can('html.custom')} onSaved={refresh} onNext={onNext} selectBlock={selectBlock} />}
     </>
   );
 }
 
-function VariantEditor({ variantId, title, canEdit, canAny, onSaved, onNext }: { onNext: () => void; variantId: string; title: string; canEdit: boolean; canAny: boolean; onSaved: () => Promise<void> }) {
+function VariantEditor({ variantId, title, canEdit, canAny, onSaved, onNext, selectBlock }: { onNext: () => void; selectBlock: string | null; variantId: string; title: string; canEdit: boolean; canAny: boolean; onSaved: () => Promise<void> }) {
   const s = useEditor();
   const [live, setLive] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -223,9 +226,10 @@ function VariantEditor({ variantId, title, canEdit, canAny, onSaved, onNext }: {
       const v = await api<EmailDraftDto>('GET', `/api/emails/${variantId}`);
       useEditor.getState().load({ id: v.id, name: v.name, status: v.status, model: 'v2', draft: v.draft as CampaignDto['draft'] }, `/api/emails/${variantId}/draft`);
       setRevisions(await api<EmailRevisionSummary[]>('GET', `/api/emails/${variantId}/revisions`));
+      if (selectBlock) useEditor.getState().select(selectBlock); // arrived from a QA finding: the block is selected
       setLoadError('');
     } catch (e) { setLoadError(errorText(e)); }
-  }, [variantId]);
+  }, [variantId, selectBlock]);
   useEffect(() => { void loadVariant(); }, [loadVariant]);
   useAutosave(variantId, canAny, canEdit);
 
@@ -593,7 +597,7 @@ function VersionsTab({ emails, lang, canEdit, canSubmit, refresh, go }: { emails
         <p className="muted small">QA reviews exactly this saved revision. Saving a newer revision later does not change what is under review.</p>
       </section>
 
-      <div className="seg-next"><button type="button" className="primary" data-testid="next-tab" disabled title="QA arrives in a later phase">Next →</button></div>
+      <div className="seg-next"><button type="button" className="primary" data-testid="next-tab" onClick={() => go('qa', current.id)}>Next →</button></div>
     </div>
   );
 }

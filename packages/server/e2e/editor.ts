@@ -64,8 +64,8 @@ try {
   await page.goto(`${BASE}/`);
   await page.getByLabel('Email name').fill('E2E summer sale');
   await page.getByLabel(/Start from the ready-made/).uncheck(); // these tests build from an empty email
-  assert((await page.getByLabel('Template colors').inputValue()) === 'travel', 'Travel colors are the default choice');
-  assert((await page.getByLabel('Template colors').locator('option').allInnerTexts()).join() === 'Travel,Events,Cosmetics', 'three template color sets to choose from');
+  assert((await page.getByLabel('Template', { exact: true }).inputValue()) === 'travel', 'Travel colors are the default choice');
+  assert((await page.getByLabel('Template', { exact: true }).locator('option').allInnerTexts()).join() === 'Travel,Events,Cosmetics', 'three template color sets to choose from');
   await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('heading', { name: 'How will you build the versions?' }).waitFor(); // a new campaign opens on Segments; go on to the email
@@ -164,7 +164,7 @@ try {
   await page.goto(`${BASE}/`);
   await page.getByLabel('Email name').fill('Second email');
   await page.getByLabel(/Start from the ready-made/).uncheck();
-  await page.getByLabel('Template colors').selectOption('events');
+  await page.getByLabel('Template', { exact: true }).selectOption('events');
   await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();
   await page.getByRole('heading', { name: 'How will you build the versions?' }).waitFor(); // a new campaign opens on Segments; go on to the email
@@ -176,7 +176,7 @@ try {
   assert(eventsHero === 'rgb(53, 69, 82)', `an Events email uses the Events colors (got ${eventsHero})`);
   await page.locator('.canvas-page').click({ position: { x: 4, y: 4 } });
   await page.getByText('Template colors: Events').waitFor();
-  assert((await page.getByLabel('Template colors').count()) === 0, 'the template colors cannot be changed inside an email');
+  assert((await page.getByLabel('Template', { exact: true }).count()) === 0, 'the template colors cannot be changed inside an email');
   ok('editing one email never changes the library original or another email');
 
   // ---- preview with selectable widths
@@ -242,7 +242,7 @@ try {
   // ---- ready-made layout and template-specific blocks
   await page.goto(`${BASE}/`);
   await page.getByLabel('Email name').fill('Events invitation');
-  await page.getByLabel('Template colors').selectOption('events');
+  await page.getByLabel('Template', { exact: true }).selectOption('events');
   assert(await page.getByLabel(/Start from the ready-made Events layout/).isChecked(), 'the ready-made layout is on by default');
   await page.getByLabel('Use the multilingual editor').uncheck(); // these checks cover the previous editor
   await page.getByRole('button', { name: 'Create and open' }).click();

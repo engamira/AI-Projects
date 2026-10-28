@@ -26,7 +26,7 @@ describe('role definitions match the agreed specification', () => {
     for (const c of ['qa.review', 'qa.approve', 'users.manage'] as const) expect(caps('builder').has(c)).toBe(false);
   });
   it('QA reviewer can review and approve, but cannot edit, submit or send', () => {
-    expect([...caps('qa_reviewer')].sort()).toEqual(['campaign.view', 'qa.approve', 'qa.review']);
+    expect([...caps('qa_reviewer')].sort()).toEqual(['campaign.view', 'qa.approve', 'qa.review', 'qa.suppress_global']);
   });
   it('Admin manages the workspace and can send, but has no review/approval or normal editing capability', () => {
     for (const c of ['users.manage', 'campaign.send', 'campaign.delete', 'html.custom', 'brand.manage', 'rules.manage'] as const) expect(caps('admin').has(c)).toBe(true);
