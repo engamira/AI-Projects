@@ -81,3 +81,12 @@ export type EmailDraftDto = {
   direction: 'ltr' | 'rtl';
   draft: { content: unknown; version: number; hash: string; updatedAt: string };
 };
+
+// ---- segments and test audiences made from the rules ----
+
+export type DerivedSegmentDto = { id: string; languageId: string; name: string; polarity: 'positive' | 'negative'; predicate: Record<string, unknown>; ruleIds: string[] };
+export type TestAudienceDto = {
+  id: string; languageId: string; kind: 'baseline' | 'scenario'; polarity: 'baseline' | 'positive' | 'negative'; name: string; email: string;
+  attributes: Record<string, unknown>; ruleIds: string[]; expected: { visible: string[]; hidden: string[] };
+};
+export type DerivedResponse = { segments: DerivedSegmentDto[]; audiences: TestAudienceDto[]; warnings: { languageId: string; message: string }[] };

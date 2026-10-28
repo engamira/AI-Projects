@@ -16,7 +16,7 @@ function RuleRow({ rule, fields, disabled, onChange, onRemove, canRemove }: {
   const setField = (key: string) => {
     const f = fields.find((x) => x.key === key)!;
     const op: Comparison = COMPARISONS[f.type].includes(rule.op) ? rule.op : 'is';
-    onChange({ field: key, op, values: needsValue(op) ? [''] : [] });
+    onChange({ field: key, op, values: needsValue(op) ? [f.type === 'boolean' ? 'yes' : ''] : [] });
   };
   const setOp = (op: Comparison) => onChange({ ...rule, op, values: needsValue(op) ? (rule.values.length ? (allowsSeveralValues(op) ? rule.values : [rule.values[0]!]) : ['']) : [] });
   return (
@@ -59,7 +59,8 @@ export function ConditionBuilder({ value, fields, onChange, disabled, depth = 1,
   return (
     <div className={`cond-group depth-${depth}`} role="group" aria-label={depth === 1 ? 'Conditions' : 'Group of conditions'}>
       <div className="cond-head">
-        <span>Show when</span>
+        <span>{depth === 1 ? 'When' : 'Group'}</span>
+        <label className="cond-not" title="Met when these conditions are NOT met"><input type="checkbox" disabled={disabled} checked={!!value.not} onChange={(e) => { const { not: _n, ...rest } = value; onChange(e.target.checked ? { ...rest, not: true } : rest); }} /> NOT</label>
         {onRemoveGroup && !disabled && <button type="button" className="link danger" onClick={onRemoveGroup}>Remove group</button>}
       </div>
       {value.rules.map((r, i) => (

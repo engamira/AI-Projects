@@ -1,4 +1,5 @@
 import type { BlockInstance, EmailContent, EmailVersion, SegmentVersion } from './content.js';
+import { blockRules, hasBlockRules, visibleBlocks } from './rules.js';
 import { evaluateCondition, isGroup, valueList, type Comparison, type ConditionGroup, type ConditionRule } from './conditions.js';
 import { segmentCode, type ContactFieldType } from './contacts.js';
 
@@ -33,7 +34,7 @@ export type VersionLayer = 'copy' | 'language' | 'default' | 'mapped';
 
 /** Blocks the contact sees: those with no condition, or whose condition the contact meets. */
 export function blocksShownFor(blocks: BlockInstance[], contact: Record<string, Value>, typeOf?: (field: string) => ContactFieldType | undefined): BlockInstance[] {
-  return blocks.filter((b) => !b.showWhen || evaluateCondition(b.showWhen, (f) => contact[f], typeOf));
+  return visibleBlocks(blocks, (f) => contact[f], typeOf);
 }
 
 /**
@@ -122,7 +123,7 @@ export function bucketOf(atoms: Atom[], field: string, raw: Value, typeOf: TypeO
 export function atomsIn(version: EmailVersion, exclude: string[] = [], typeOf: TypeOf = () => 'text'): Map<string, Atom[]> {
   const rules: ConditionRule[] = [];
   const walk = (g: ConditionGroup): void => { for (const r of g.rules) { if (isGroup(r)) walk(r); else rules.push(r); } };
-  for (const b of version.blocks) if (b.showWhen) walk(b.showWhen);
+  for (const b of version.blocks) for (const r of blockRules(b)) walk(r.when);
   const raw = new Map<string, Omit<Atom, 'sample'>[]>();
   for (const r of rules) {
     if (exclude.includes(r.field)) continue;
@@ -239,7 +240,7 @@ export function activeLanguageVersions(content: EmailContent, audienceFields: st
 }
 
 /** Does any block of this version have a show/hide rule? */
-export const hasRules = (v: { blocks: BlockInstance[] }): boolean => v.blocks.some((b) => !!b.showWhen);
+export const hasRules = (v: { blocks: BlockInstance[] }): boolean => v.blocks.some((b) => hasBlockRules(b));
 
 /** The name shown for a version: UAE-ar for a segment copy; the language itself ("ar") for a language email, which is called "ar email" on screen. */
 export const versionName = (v: Pick<SegmentVersion, 'values' | 'kind'> & { blocks?: BlockInstance[] }): string =>

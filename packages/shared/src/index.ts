@@ -127,6 +127,7 @@ export * from './personalize.js';
 export * from './presets.js';
 export * from './versions.js';
 export * from './languages.js';
+export * from './rules.js';
 export * from './conditions.js';
 
 import type { BlockDefinition } from './blocks.js';

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { campaignStatus, type CampaignDto, type CampaignEmails, type ContactField, type EmailDraftDto, type EmailRevisionSummary } from '@cl/shared';
+import { campaignStatus, type CampaignDto, type CampaignEmails, type ContactField, type DerivedResponse, type EmailDraftDto, type EmailRevisionSummary, type TestAudienceDto } from '@cl/shared';
 import { api, errorText } from '../api';
 import { useSession } from '../session';
 import { AudienceCtx, EditorGrid, EditorPage, useAutosave } from './EditorPage';
@@ -13,7 +13,7 @@ type TabId = 'segments' | 'emails' | 'audiences' | 'preview' | 'versions' | 'qa'
 const TABS: { id: TabId; label: string; ready: boolean }[] = [
   { id: 'segments', label: 'Segments', ready: true },
   { id: 'emails', label: 'Emails', ready: true },
-  { id: 'audiences', label: 'Audiences', ready: false },
+  { id: 'audiences', label: 'Audiences', ready: true },
   { id: 'preview', label: 'Preview', ready: false },
   { id: 'versions', label: 'Versions', ready: false },
   { id: 'qa', label: 'QA', ready: false },
@@ -50,7 +50,8 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
   const firstWithEmail = emails?.languages.find((l) => l.variant);
   const tab = (params.get('tab') as TabId | null) ?? (emails ? (firstWithEmail ? 'emails' : 'segments') : 'segments');
   const lang = params.get('lang') ?? firstWithEmail?.id ?? 'en';
-  const go = (t: TabId, l?: string) => setParams({ tab: t, ...(l ? { lang: l } : {}) }, { replace: false });
+  // leaving the editor saves first, so the segments and audiences the rules make are up to date when the next tab opens
+  const go = (t: TabId, l?: string) => { void flushSave().finally(() => setParams({ tab: t, ...(l ? { lang: l } : {}) }, { replace: false })); };
 
   async function rename() {
     const n = name.trim();
@@ -59,7 +60,7 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
   }
 
   return (
-    <AudienceCtx.Provider value={{ segmentFields: [], conditionFields: fields, perLanguage: true }}>
+    <AudienceCtx.Provider value={{ segmentFields: [], conditionFields: fields, perLanguage: true, multi: true }}>
       <div className="editor">
         <div className="editor-top">
           <Link to="/" className="back">← Emails</Link>
@@ -75,7 +76,8 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
         </div>
         {error && <p className="error" role="alert" style={{ margin: '8px 16px' }}>{error}</p>}
         {tab === 'segments' && emails && <div className="tab-body"><SegmentsTab campaignId={campaign.id} emails={emails} canEdit={canEdit} refresh={refresh} onOpen={(l) => go('emails', l)} /></div>}
-        {tab === 'emails' && emails && <EmailsTab emails={emails} lang={lang} canEdit={canEdit} refresh={refresh} onPick={(l) => go('emails', l)} onSegments={() => go('segments')} />}
+        {tab === 'audiences' && emails && <div className="tab-body"><AudiencesTab campaignId={campaign.id} emails={emails} fields={fields} onEmails={() => go('emails')} /></div>}
+        {tab === 'emails' && emails && <EmailsTab emails={emails} lang={lang} canEdit={canEdit} refresh={refresh} onPick={(l) => go('emails', l)} onSegments={() => go('segments')} onNext={() => go('audiences')} />}
         {!emails && <div className="tab-body"><p>Loading…</p></div>}
       </div>
     </AudienceCtx.Provider>
@@ -172,10 +174,7 @@ function SegmentsTab({ campaignId, emails, canEdit, refresh, onOpen }: { campaig
         <p className="muted small">Creating from another email copies its latest <strong>saved</strong> revision: blocks, styling and rules (with new ids). After that the two are independent, so edits to one never change the other.</p>
       </section>
 
-      <section className="seg-panel tint-map" aria-labelledby="derived-title" data-testid="derived-segments">
-        <h2 id="derived-title">Derived segments</h2>
-        <p className="muted">Segments made by the show/hide rules in your emails will be listed here, read only. This arrives with the next phase (rules engine and test audiences).</p>
-      </section>
+      <DerivedSegments campaignId={campaignId} languages={emails.languages.map((l) => ({ id: l.id, name: l.name }))} />
 
       <div className="seg-next"><button type="button" className="primary" data-testid="segments-next" disabled={created.length === 0} onClick={() => onOpen(created[0]?.id ?? 'en')}>Next →</button></div>
     </div>
@@ -184,8 +183,8 @@ function SegmentsTab({ campaignId, emails, canEdit, refresh, onOpen }: { campaig
 
 // ---------------- Emails ----------------
 
-function EmailsTab({ emails, lang, canEdit, refresh, onPick, onSegments }: {
-  emails: CampaignEmails; lang: string; canEdit: boolean; refresh: () => Promise<void>; onPick: (l: string) => void; onSegments: () => void;
+function EmailsTab({ emails, lang, canEdit, refresh, onPick, onSegments, onNext }: {
+  emails: CampaignEmails; lang: string; canEdit: boolean; refresh: () => Promise<void>; onPick: (l: string) => void; onSegments: () => void; onNext: () => void;
 }) {
   const { can } = useSession();
   const selected = emails.languages.find((l) => l.id === lang && l.variant) ?? emails.languages.find((l) => l.variant);
@@ -200,12 +199,12 @@ function EmailsTab({ emails, lang, canEdit, refresh, onPick, onSegments }: {
       </div>
       {!selected?.variant
         ? <div className="tab-body"><p className="muted">No email has been created yet. <button type="button" className="link" onClick={onSegments}>Create the English email in Segments</button>.</p></div>
-        : <VariantEditor key={selected.variant.id} variantId={selected.variant.id} title={selected.emailName} canEdit={canEdit} canAny={canEdit || can('html.custom')} onSaved={refresh} />}
+        : <VariantEditor key={selected.variant.id} variantId={selected.variant.id} title={selected.emailName} canEdit={canEdit} canAny={canEdit || can('html.custom')} onSaved={refresh} onNext={onNext} />}
     </>
   );
 }
 
-function VariantEditor({ variantId, title, canEdit, canAny, onSaved }: { variantId: string; title: string; canEdit: boolean; canAny: boolean; onSaved: () => Promise<void> }) {
+function VariantEditor({ variantId, title, canEdit, canAny, onSaved, onNext }: { onNext: () => void; variantId: string; title: string; canEdit: boolean; canAny: boolean; onSaved: () => Promise<void> }) {
   const s = useEditor();
   const [live, setLive] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -261,8 +260,96 @@ function VariantEditor({ variantId, title, canEdit, canAny, onSaved }: { variant
           <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
           <span className="switch-text"><strong>Live preview</strong></span>
         </label>
+        <button type="button" className="primary" data-testid="next-tab" style={{ marginLeft: 'auto' }} onClick={onNext}>Next →</button>
       </div>
       <EditorGrid live={live} previewBase={`/api/emails/${variantId}/preview`} />
     </>
+  );
+}
+
+// ---------------- Derived segments (Segments tab) ----------------
+
+function useDerived(campaignId: string) {
+  const [data, setData] = useState<DerivedResponse | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let live = true;
+    api<DerivedResponse>('GET', `/api/campaigns/${campaignId}/derived`).then((d) => { if (live) setData(d); }).catch((e) => { if (live) setError(errorText(e)); });
+    return () => { live = false; };
+  }, [campaignId]);
+  return { data, error };
+}
+
+function DerivedSegments({ campaignId, languages }: { campaignId: string; languages: { id: string; name: string }[] }) {
+  const { data, error } = useDerived(campaignId);
+  return (
+    <section className="seg-panel tint-map" aria-labelledby="derived-title" data-testid="derived-segments">
+      <h2 id="derived-title">Derived segments</h2>
+      <p className="muted small">Made from the show/hide rules in your emails. Read only: change a rule in the Emails tab and this list follows.</p>
+      {error && <p className="error" role="alert">{error}</p>}
+      {data && data.segments.length === 0 && <p className="muted">No segments yet. Add a rule to a block, for example “Show when Country is UAE”, and the segments it creates appear here.</p>}
+      {data && data.segments.length > 0 && (
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Segment</th><th>Language</th><th>Kind</th><th>Rules</th></tr></thead>
+            <tbody>
+              {data.segments.map((s) => (
+                <tr key={s.id}>
+                  <td><strong>{s.name}</strong></td>
+                  <td>{languages.find((l) => l.id === s.languageId)?.name ?? s.languageId}</td>
+                  <td><span className={`pol ${s.polarity}`}>{s.polarity === 'positive' ? 'Meets a rule' : 'Does not meet it'}</span></td>
+                  <td>{s.ruleIds.length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data?.warnings.map((w, i) => <p key={i} className="error small" role="alert">{languages.find((l) => l.id === w.languageId)?.name}: {w.message}</p>)}
+    </section>
+  );
+}
+
+// ---------------- Audiences ----------------
+
+const showValue = (v: unknown): string => (v === null || v === undefined || v === '' ? 'blank' : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v));
+
+function AudiencesTab({ campaignId, emails, fields, onEmails }: { campaignId: string; emails: CampaignEmails; fields: ContactField[]; onEmails: () => void }) {
+  const { data, error } = useDerived(campaignId);
+  const label = (k: string) => (fields.find((f) => f.key === k)?.label ?? k).replace(/ \(.*\)$/, '');
+  const hidden = ['first_name', 'last_name', 'company', 'email', 'language'];
+  const card = (a: TestAudienceDto) => {
+    const attrs = Object.entries(a.attributes).filter(([k]) => !hidden.includes(k));
+    return (
+      <article key={a.id} className="aud-card" data-testid="audience-card">
+        <h4>{a.name} <span className={`pol ${a.polarity}`}>{a.polarity === 'baseline' ? 'Baseline' : a.polarity === 'positive' ? 'Shows' : 'Hides'}</span></h4>
+        <dl>
+          <dt>Values</dt><dd>{attrs.length ? attrs.map(([k, v]) => `${label(k)}: ${showValue(v)}`).join(', ') : 'Language only'}</dd>
+          <dt>Blocks</dt><dd>{a.expected.visible.length} shown · {a.expected.hidden.length} hidden</dd>
+          <dt>Address</dt><dd className="muted small">{a.email}</dd>
+        </dl>
+      </article>
+    );
+  };
+  return (
+    <div className="audience-pane">
+      <section className="seg-panel tint-test" aria-labelledby="aud-title">
+        <h2 id="aud-title">Test audiences</h2>
+        <p className="muted small">Made-up contacts for trying each email. One baseline per language, plus for every rule one audience that meets it and one that does not, so both the shown and the hidden outcome are tested. They follow the rules automatically, are never real contacts and are never emailed.</p>
+        {error && <p className="error" role="alert">{error}</p>}
+        {!data && !error && <p>Loading…</p>}
+      </section>
+      {data && emails.languages.map((l) => {
+        const list = data.audiences.filter((a) => a.languageId === l.id);
+        return (
+          <section key={l.id} className="seg-panel tint-who" aria-label={`${l.name} audiences`} data-testid="language-audiences">
+            <h2>{l.name} <span className="muted small">{l.variant ? l.emailName : 'email not created yet'}</span></h2>
+            {list.length === 0 ? <p className="muted">No audiences yet.</p> : <div className="audience-grid">{list.map(card)}</div>}
+            {!l.variant && <p className="muted small">The baseline audience exists already. Create the email in Segments to get audiences for its rules.</p>}
+          </section>
+        );
+      })}
+      <div className="seg-next"><button type="button" className="secondary" onClick={onEmails}>← Back to Emails</button></div>
+    </div>
   );
 }

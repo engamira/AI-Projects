@@ -1,3 +1,4 @@
+import { validateRules, withFreshRuleIds, type BlockRule } from './rules.js';
 import { z } from 'zod';
 import { BLOCK_TYPES, LEGACY_COLOR_PROPS, blockDefinition, type BlockDefinition, type BlockType, type FieldDef, type Props } from './blocks.js';
 import { PALETTE_IDS, type PaletteId } from './palettes.js';
@@ -12,6 +13,8 @@ export type BlockInstance = {
   props: Props; // this instance's own copy: edits never reach the library
   /** Show this block only to contacts who meet the condition (about the campaign's segment fields). Absent = everyone. */
   showWhen?: ConditionGroup;
+  /** Show / hide rules (AND, OR, NOT). Together with the older showWhen they are read by the rules engine only (rules.ts). */
+  rules?: BlockRule[];
 };
 
 export type EmailSettings = {
@@ -144,7 +147,7 @@ export function createInstance(def: BlockDefinition): BlockInstance {
 
 /** Deep copy with new block ids (used when duplicating a block or a campaign). */
 export function cloneBlock(b: BlockInstance): BlockInstance {
-  return { ...JSON.parse(JSON.stringify(b)), id: crypto.randomUUID() } as BlockInstance;
+  return withFreshRuleIds({ ...JSON.parse(JSON.stringify(b)), id: crypto.randomUUID() } as BlockInstance);
 }
 
 export function cloneContent(c: EmailContent, newIds = false): EmailContent {
@@ -153,8 +156,8 @@ export function cloneContent(c: EmailContent, newIds = false): EmailContent {
     // the same block keeps the same new id in every version, so "copy this block to all versions" still works in the copy
     const ids = new Map<string, string>();
     const fresh = (id: string) => { let n = ids.get(id); if (!n) { n = crypto.randomUUID(); ids.set(id, n); } return n; };
-    copy.blocks = copy.blocks.map((b) => ({ ...b, id: fresh(b.id) }));
-    if (copy.variants) copy.variants = copy.variants.map((v) => ({ ...v, id: crypto.randomUUID(), blocks: v.blocks.map((b) => ({ ...b, id: fresh(b.id) })) }));
+    copy.blocks = copy.blocks.map((b) => withFreshRuleIds({ ...b, id: fresh(b.id) }));
+    if (copy.variants) copy.variants = copy.variants.map((v) => ({ ...v, id: crypto.randomUUID(), blocks: v.blocks.map((b) => withFreshRuleIds({ ...b, id: fresh(b.id) })) }));
   }
   return copy;
 }
@@ -224,7 +227,7 @@ export function checkFields(fields: FieldDef[], values: Record<string, unknown>,
   return null;
 }
 
-const blockShape = z.object({ id: z.string().uuid(), type: z.string(), sourceVersion: z.number().int().min(1), props: z.record(z.string(), z.unknown()), showWhen: z.unknown().optional() }).strict();
+const blockShape = z.object({ id: z.string().uuid(), type: z.string(), sourceVersion: z.number().int().min(1), props: z.record(z.string(), z.unknown()), showWhen: z.unknown().optional(), rules: z.unknown().optional() }).strict();
 
 const envelope = z.object({
   schemaVersion: z.literal(1),
@@ -278,7 +281,7 @@ export function validateContent(input: unknown): ValidationResult {
 }
 
 /** Checks the settings and blocks of one version (the Default or a segment's). Returns an error message or null. */
-function checkVersion(settings: Record<string, unknown>, blocks: { id: string; type: string; props: Record<string, unknown>; showWhen?: unknown }[], palette: string, prefix: string): string | null {
+function checkVersion(settings: Record<string, unknown>, blocks: { id: string; type: string; props: Record<string, unknown>; showWhen?: unknown; rules?: unknown }[], palette: string, prefix: string): string | null {
   const { palette: _p, ...otherSettings } = settings;
   const settingsErr = checkFields(SETTINGS_FIELDS, otherSettings, `${prefix}Email settings`);
   if (settingsErr) return settingsErr;
@@ -292,6 +295,8 @@ function checkVersion(settings: Record<string, unknown>, blocks: { id: string; t
       const ce = validateCondition(b.showWhen);
       if (ce) return `${prefix}Block ${i + 1} (${def.label}): ${ce}`;
     }
+    const re = validateRules(b.rules);
+    if (re) return `${prefix}Block ${i + 1} (${def.label}): ${re}`;
     if (def.category !== 'shared' && def.category !== palette) {
       return `${prefix}Block ${i + 1} (${def.label}) belongs to the ${def.category} template and cannot be used in this email.`;
     }

@@ -179,8 +179,13 @@ export type ResolvedRecipient = { kind: 'raw' } | { kind: 'recipient'; recipient
 export async function resolveRecipient(q: Queryable, campaignId: string, id: string, canSeeContacts: boolean): Promise<ResolvedRecipient> {
   const sample = SAMPLE_RECIPIENTS.find((s) => s.id === id);
   if (sample) return sample.recipient === null ? { kind: 'raw' } : { kind: 'recipient', recipient: sample.recipient, label: sample.label };
-  const m = /^(test|contact):([0-9a-f-]{36})$/i.exec(id);
+  const m = /^(test|contact|audience):([0-9a-f-]{36})$/i.exec(id);
   if (!m) return { kind: 'not_found' };
+  if (m[1] === 'audience') {
+    // a test audience made from the rules of the language emails
+    const a = await q.query<{ name: string; attributes: Recipient }>('SELECT name, attributes FROM test_audience WHERE id = $1 AND campaign_id = $2', [m[2], campaignId]);
+    return a.rows[0] ? { kind: 'recipient', recipient: a.rows[0].attributes, label: `${a.rows[0].name} (test audience)` } : { kind: 'not_found' };
+  }
   if (m[1] === 'test') {
     const r = await q.query<TestRow>('SELECT id, code, email, data FROM campaign_test_contact WHERE id = $1 AND campaign_id = $2', [m[2], campaignId]);
     return r.rows[0] ? { kind: 'recipient', recipient: r.rows[0].data, label: `${r.rows[0].code} (test contact)` } : { kind: 'not_found' };

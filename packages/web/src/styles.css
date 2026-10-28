@@ -412,3 +412,22 @@ label.check input[type='checkbox'], label.check input[type='radio'], .field labe
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .chip { padding: 3px 12px; border-radius: 999px; background: var(--canvas-bg); color: var(--text); font-size: 0.88rem; }
 .chip.first { background: var(--accent); color: var(--accent-text); }
+
+/* rules */
+.rule-card { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin: 8px 0; background: var(--surface); border-left: 4px solid var(--ok); }
+.rule-card.hide { border-left-color: var(--danger); }
+.rule-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rule-head select { width: auto; font-weight: 600; }
+.cond-not { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; }
+.cond-badge.hide { background: #fde2e0; color: #7a1d17; border-color: #e8a29d; }
+.audience-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.aud-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); transition: box-shadow .17s; }
+.aud-card:hover { box-shadow: 0 6px 16px rgba(38,29,36,.12); }
+.aud-card h4 { margin: 0 0 4px; font-size: 0.98rem; }
+.aud-card dl { margin: 6px 0 0; font-size: 0.85rem; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+.aud-card dt { color: var(--muted); }
+.aud-card dd { margin: 0; }
+.pol { font-size: 0.72rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.05em; }
+.pol.positive { background: #e0f3e8; color: #14633a; }
+.pol.negative { background: #fde2e0; color: #7a1d17; }
+.pol.baseline { background: var(--canvas-bg); color: var(--muted); }

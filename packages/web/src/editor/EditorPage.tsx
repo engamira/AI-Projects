@@ -24,7 +24,9 @@ import {
   derivedSegments,
   isEnglish,
   defaultEmailName,
-  evaluateCondition,
+  blockRules,
+  hasBlockRules,
+  isBlockVisible,
   emptyGroup,
   isGroup,
   pickVersion,
@@ -67,6 +69,7 @@ import { BlockView } from './BlockView';
 import { ConditionBuilder } from '../components/ConditionBuilder';
 import { FieldForm } from './Fields';
 import { SegmentsPane, modeOf } from './SegmentsPane';
+import { RulesPanel } from './RulesPanel';
 import { useSegmentData } from './segmentData';
 import { useDerivedTestContacts } from './derivedSync';
 import { flushSave, useEditor } from './store';
@@ -87,7 +90,7 @@ function useLibrary(): BlockDefinition[] {
 
 /** The campaign's segment fields (the only fields a "show when" condition can use). */
 /** segmentFields: the campaign's segment fields. conditionFields: the fields a block condition may use (any field when building one email per language, else the segment fields). */
-export const AudienceCtx = createContext<{ segmentFields: ContactField[]; conditionFields: ContactField[]; perLanguage: boolean }>({ segmentFields: [], conditionFields: [], perLanguage: false });
+export const AudienceCtx = createContext<{ segmentFields: ContactField[]; conditionFields: ContactField[]; perLanguage: boolean; /** true in the language editor: blocks carry several show/hide rules */ multi?: boolean }>({ segmentFields: [], conditionFields: [], perLanguage: false });
 const plainLabel = (label: string): string => label.replace(/ \(.*\)$/, '');
 
 /** The words and blocks being edited: the Default version, or the segment version chosen in the bar above the canvas. */
@@ -125,7 +128,7 @@ function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: 
   const def = blockDefinition(block.type);
   const { conditionFields } = useContext(AudienceCtx);
   const focus = useEditor((s) => s.focus);
-  const hiddenFor = focus && block.showWhen && !evaluateCondition(block.showWhen, (f) => focus.contact[f], (k) => conditionFields.find((f) => f.key === k)?.type) ? focus.code : null;
+  const hiddenFor = focus && hasBlockRules(block) && !isBlockVisible(block, (f) => focus.contact[f], (k) => conditionFields.find((f) => f.key === k)?.type) ? focus.code : null;
   const selected = selectedId === block.id;
   return (
     <div
@@ -138,11 +141,11 @@ function SortableBlock({ block, index, total, canEdit: canEditBasic }: { block: 
       <div className="block-bar" onClick={(e) => e.stopPropagation()}>
         <span className="block-label">{def?.label ?? block.type}</span>
         {hiddenFor && <span className="cond-badge" data-testid="hidden-for">Not shown to {hiddenFor}</span>}
-        {block.showWhen && (
-          <span className="cond-badge" data-testid="cond-badge" title="This block is shown only to contacts who meet this condition">
-            Only when {describeCondition(block.showWhen, (k) => plainLabel(conditionFields.find((f) => f.key === k)?.label ?? k), (k) => conditionFields.find((f) => f.key === k)?.type)}
+        {blockRules(block).map((r) => (
+          <span key={r.id} className={`cond-badge${r.effect === 'hide' ? ' hide' : ''}`} data-testid="cond-badge" title={r.effect === 'hide' ? 'This block is hidden from contacts who meet this condition' : 'This block is shown only to contacts who meet this condition'}>
+            {r.effect === 'hide' ? 'Hidden when' : 'Only when'} {describeCondition(r.when, (k) => plainLabel(conditionFields.find((f) => f.key === k)?.label ?? k), (k) => conditionFields.find((f) => f.key === k)?.type)}
           </span>
-        )}
+        ))}
         {canEdit && (
           <span className="block-tools">
             <button type="button" className="handle" aria-label={`Drag ${def?.label} to reorder`} {...attributes} {...listeners}>⠿</button>
@@ -266,6 +269,7 @@ function ShowWhenPanel({ block, canEdit }: { block: BlockInstance; canEdit: bool
 
 function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
   const { selectedId, setProp, setProps, setSetting, copyBlockToOthers } = useEditor();
+  const { multi } = useContext(AudienceCtx);
   const hasVersions = useEditor((s) => (s.content.variants?.length ?? 0) > 0);
   const content = useDoc();
   const { can } = useSession();
@@ -294,7 +298,7 @@ function Properties({ canEdit: canEditBasic }: { canEdit: boolean }) {
           disabled={!canEdit}
           onChange={(k, v: PropValue) => setProp(block.id, k, v)}
         />
-        <ShowWhenPanel block={block} canEdit={canEditBasic} />
+        {multi ? <RulesPanel block={block} canEdit={canEditBasic} /> : <ShowWhenPanel block={block} canEdit={canEditBasic} />}
         {hasVersions && canEditBasic && block.type !== 'custom_html' && (
           <p><button type="button" onClick={() => copyBlockToOthers(block.id)} title="Puts an independent copy of this block into every other version of the email, replacing the same block there if it exists">Copy this block to all other versions</button></p>
         )}

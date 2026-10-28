@@ -6,7 +6,7 @@ import type { ContactFieldType } from './contacts.js';
 export type Comparison = 'is' | 'is_not' | 'contains' | 'not_contains' | 'is_one_of' | 'is_blank' | 'is_not_blank' | 'greater' | 'less';
 
 export type ConditionRule = { field: string; op: Comparison; values: string[] };
-export type ConditionGroup = { match: 'all' | 'any'; rules: (ConditionRule | ConditionGroup)[] };
+export type ConditionGroup = { match: 'all' | 'any'; rules: (ConditionRule | ConditionGroup)[]; /** NOT: the group is met when its rules are NOT met. */ not?: boolean };
 
 export const MAX_CONDITION_RULES = 20;
 export const MAX_CONDITION_DEPTH = 3;
@@ -46,6 +46,7 @@ export function validateCondition(input: unknown): string | null {
     const o = x as Record<string, unknown>;
     if ('rules' in o) {
       if (o.match !== 'all' && o.match !== 'any') return 'a condition group must be "all" or "any"';
+      if (o.not !== undefined && typeof o.not !== 'boolean') return 'a condition group "not" must be true or false';
       if (!Array.isArray(o.rules) || o.rules.length === 0) return 'a condition group needs at least one rule';
       for (const r of o.rules) { const e = walk(r, depth + 1); if (e) return e; }
       return null;
@@ -114,7 +115,8 @@ function evalRule(r: ConditionRule, get: (field: string) => Value, typeOf: (fiel
 /** Does a contact (its values, by field) meet the condition? */
 export function evaluateCondition(c: ConditionGroup, get: (field: string) => Value, typeOf: (field: string) => ContactFieldType | undefined = () => 'text'): boolean {
   const results = c.rules.map((r) => (isGroup(r) ? evaluateCondition(r, get, typeOf) : evalRule(r, get, typeOf)));
-  return c.match === 'all' ? results.every(Boolean) : results.some(Boolean);
+  const met = c.match === 'all' ? results.every(Boolean) : results.some(Boolean);
+  return c.not ? !met : met;
 }
 
 /** The condition in plain words, for showing on the block: "Country is UAE or KSA and VIP is yes". */
@@ -127,5 +129,6 @@ export function describeCondition(c: ConditionGroup, labelOf: (field: string) =>
     return `${labelOf(r.field)} ${comparisonLabel(r.op, type)}${needsValue(r.op) ? ` ${joined || '…'}` : ''}`;
   });
   const text = parts.join(c.match === 'all' ? ' and ' : ' or ');
+  if (c.not) return `not (${text})`;
   return nested && parts.length > 1 ? `(${text})` : text;
 }

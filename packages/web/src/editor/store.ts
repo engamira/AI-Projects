@@ -13,6 +13,7 @@ import {
   type EmailVersion,
   type ConditionGroup,
   type Versioning,
+  type BlockRule,
   type PropValue,
   type SaveDraftResponse,
   isEnglish,
@@ -65,6 +66,8 @@ type EditorState = {
   setRoute: (segmentKey: string, target: string | null) => void;
   /** Shows a block only to contacts who meet the condition (null = everyone). */
   setShowWhen: (blockId: string, condition: ConditionGroup | null) => void;
+  /** Replaces all show/hide rules of a block (the older single "show when" is folded into them). */
+  setRules: (blockId: string, rules: BlockRule[]) => void;
   /** Copies one block into every other version (replacing the block with the same identity, or adding it at the same place). */
   copyBlockToOthers: (id: string) => void;
   undo: () => void;
@@ -186,6 +189,18 @@ export const useEditor = create<EditorState>((set, get) => {
       const base = content.versioning ?? { mode: 'copies' as const };
       const { routes: _old, ...rest } = base;
       commit({ ...content, versioning: Object.keys(routes).length ? { ...rest, routes } : rest });
+    },
+
+    setRules: (blockId, rules) => {
+      const { content, editing } = get();
+      commit(change(content, editing, (d) => ({
+        ...d,
+        blocks: d.blocks.map((b) => {
+          if (b.id !== blockId) return b;
+          const { showWhen: _old, rules: _rules, ...rest } = b;
+          return rules.length ? { ...rest, rules } : rest;
+        }),
+      })), `${editing ?? ''}:${blockId}:rules`);
     },
 
     setShowWhen: (blockId, condition) => {

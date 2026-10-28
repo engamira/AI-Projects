@@ -31,6 +31,7 @@ import { latestProfile } from '../brand.js';
 import type { AppConfig } from '../config.js';
 import { sha256 } from '../crypto.js';
 import { DEFAULT_WORKSPACE_ID, withTransaction, type Db, type Queryable } from '../db.js';
+import { syncDerived } from '../derived.js';
 import { duplicateEmails } from '../emails.js';
 import { renderEmail } from '../render.js';
 import { logActivity } from '../services.js';
@@ -153,6 +154,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
     const userId = req.auth!.user.id;
     const row = await withTransaction(db, async (q) => {
       const c = await createCampaign(q, userId, name, starter ? starterContent(palette) : emptyContent(palette), 'created', undefined, model);
+      if (model === 'v2') await syncDerived(q, c.id); // the baseline test audience of English
       await logActivity(q, { actorId: userId, action: 'campaign.created', entityType: 'campaign', entityId: c.id, details: { name, palette, starter, model } });
       return c;
     });
@@ -227,7 +229,7 @@ export function campaignRoutes(app: FastifyInstance, db: Db, config: AppConfig):
       if (!src) return null;
       // Fresh block ids: the copy shares nothing with the original.
       const c = await createCampaign(q, userId, `Copy of ${src.name}`.slice(0, 120), cloneContent(src.draft_content, true), 'duplicate', `Copied from "${src.name}"`, src.model);
-      if (src.model === 'v2') await duplicateEmails(q, id, c.id, userId);
+      if (src.model === 'v2') { await duplicateEmails(q, id, c.id, userId); await syncDerived(q, c.id); }
       await logActivity(q, { actorId: userId, action: 'campaign.duplicated', entityType: 'campaign', entityId: c.id, details: { from: id } });
       return c;
     });

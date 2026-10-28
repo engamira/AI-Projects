@@ -1,8 +1,8 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
-  collectAssetIds, emailName, normalizeContent, parseLanguageList, validateContent,
-  type CampaignEmails, type EmailContent, type EmailDraftDto, type EmailRevisionSummary, type LanguageDto, type PreviewResponse, type SaveDraftResponse,
+  collectAssetIds, emailName, normalizeContent, parseLanguageList, validateContent, visibleBlocks,
+  type CampaignEmails, type DerivedResponse, type EmailContent, type EmailDraftDto, type EmailRevisionSummary, type LanguageDto, type PreviewResponse, type SaveDraftResponse,
 } from '@cl/shared';
 import { missingAssets } from '../assets.js';
 import { resolveRecipient } from '../campaignAudience.js';
@@ -12,6 +12,7 @@ import { latestProfile } from '../brand.js';
 import type { AppConfig } from '../config.js';
 import { DEFAULT_WORKSPACE_ID, withTransaction, type Db, type Queryable } from '../db.js';
 import { addEmailRevision, campaignEmails, createEmailVariant, hashOf, listLanguages, setSelectedLanguages, upgradeCampaign } from '../emails.js';
+import { readDerived, rulesSignature, syncDerived } from '../derived.js';
 import { roleEditRefusal } from '../editrules.js';
 import { renderEmail } from '../render.js';
 import { logActivity } from '../services.js';
@@ -76,6 +77,7 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
       if (c.rows[0].status !== 'draft') return { kind: 'locked' as const };
       const out = await setSelectedLanguages(q, id, parsed.ids);
       if ('blocked' in out) return { kind: 'blocked' as const, blocked: out.blocked };
+      await syncDerived(q, id);
       await logActivity(q, { actorId: userId, action: 'campaign.languages_set', entityType: 'campaign', entityId: id, details: { languages: parsed.ids } });
       return { kind: 'ok' as const };
     });
@@ -89,6 +91,13 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
     return { duplicates: parsed.duplicates, emails: await campaignEmails(db, id, 'v2') };
   });
 
+  // Segments and test audiences made from the rules of this email's language emails (read only: they follow the rules).
+  app.get<{ Params: { id: string } }>('/api/campaigns/:id/derived', { config: { access: 'campaign.view' } }, async (req, reply): Promise<DerivedResponse | FastifyReply> => {
+    const { id } = idParam.parse(req.params);
+    if (!(await campaignRow(db, id))) return notFound(reply);
+    return readDerived(db, id);
+  });
+
   // Create the email of one language (English from the starting layout, any other from a saved email). Safe to retry with the same requestId.
   app.post<{ Params: { id: string } }>('/api/campaigns/:id/emails', { config: { access: 'campaign.edit' } }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
@@ -97,6 +106,7 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
     const out = await withTransaction(db, async (q) => {
       const r = await createEmailVariant(q, { campaignId: id, languageId: body.languageId, createFromId: body.createFromId ?? null, userId, requestId: body.requestId ?? null });
       if (r.kind === 'ok' && !r.existing) {
+        await syncDerived(q, id);
         await logActivity(q, { actorId: userId, action: body.createFromId ? 'email.cloned' : 'email.created', entityType: 'campaign', entityId: id, details: { language: body.languageId, from: body.createFromId ?? null, emailId: r.id } });
       }
       return r;
@@ -112,6 +122,7 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
     const userId = req.auth!.user.id;
     const r = await withTransaction(db, async (q) => {
       const out = await upgradeCampaign(q, id, userId);
+      if (typeof out === 'object') await syncDerived(q, id);
       if (typeof out === 'object') await logActivity(q, { actorId: userId, action: 'campaign.upgraded', entityType: 'campaign', entityId: id, details: out });
       return out;
     });
@@ -135,6 +146,7 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
       if (!v) return 'missing' as const;
       if (v.status !== 'draft') return 'locked' as const;
       await q.query('DELETE FROM email_variant WHERE id = $1', [id]);
+      await syncDerived(q, v.campaign_id);
       await logActivity(q, { actorId: userId, action: 'email.deleted', entityType: 'campaign', entityId: v.campaign_id, details: { language: v.language_id, emailId: id } });
       return 'ok' as const;
     });
@@ -162,11 +174,16 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
     const refusal = roleEditRefusal(req.auth!.user.role, current.draft_content, v.content);
     if (refusal) return reply.status(403).send({ error: 'forbidden_edit', message: refusal });
     if (current.draft_hash === hash) return { version: current.draft_version, hash, updatedAt: current.updated_at.toISOString() } satisfies SaveDraftResponse;
-    const r = await db.query<{ draft_version: number; updated_at: Date }>(
-      `UPDATE email_variant SET draft_content = $3, draft_hash = $4, draft_version = draft_version + 1, updated_by = $5, updated_at = now()
-        WHERE id = $1 AND workspace_id = $6 AND draft_version = $2 RETURNING draft_version, updated_at`,
-      [id, body.baseVersion, JSON.stringify(v.content), hash, req.auth!.user.id, DEFAULT_WORKSPACE_ID],
-    );
+    // the segments and test audiences follow the rules: rebuilt in the same transaction when the blocks or their rules changed
+    const r = await withTransaction(db, async (q) => {
+      const res = await q.query<{ draft_version: number; updated_at: Date }>(
+        `UPDATE email_variant SET draft_content = $3, draft_hash = $4, draft_version = draft_version + 1, updated_by = $5, updated_at = now()
+          WHERE id = $1 AND workspace_id = $6 AND draft_version = $2 RETURNING draft_version, updated_at`,
+        [id, body.baseVersion, JSON.stringify(v.content), hash, req.auth!.user.id, DEFAULT_WORKSPACE_ID],
+      );
+      if (res.rowCount === 1 && rulesSignature(current.draft_content) !== rulesSignature(v.content)) await syncDerived(q, current.campaign_id);
+      return res;
+    });
     if (r.rowCount !== 1) {
       const now = await variantRow(db, id);
       return reply.status(409).send({ error: 'version_conflict', message: 'This email was changed in another window or by someone else. Reload to see the latest version.', currentVersion: now?.draft_version });
@@ -214,6 +231,7 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
       if (roleEditRefusal(req.auth!.user.role, v.draft_content, content)) return 'html' as const;
       await q.query('UPDATE email_variant SET draft_content = $2, draft_hash = $3, draft_version = draft_version + 1, updated_by = $4, updated_at = now() WHERE id = $1', [id, JSON.stringify(content), hashOf(content), userId]);
       const n = await addEmailRevision(q, id, userId, 'restore', content, { restoredFromId: rid });
+      await syncDerived(q, v.campaign_id);
       await logActivity(q, { actorId: userId, action: 'email.revision_restored', entityType: 'campaign', entityId: v.campaign_id, details: { language: v.language_id, restoredNumber: rev.rows[0].number, newNumber: n } });
       return 'ok' as const;
     });
@@ -241,8 +259,12 @@ export function emailRoutes(app: FastifyInstance, db: Db, config: AppConfig): vo
     }
     const brand = await latestProfile(db, content.settings.palette);
     const knownFields = (await allFields(db)).map((f) => f.key);
-    const out = await renderEmail(content, { baseUrl: config.baseUrl, brand, knownFields, language: { locale: v.locale, direction: v.direction }, ...(who.kind === 'recipient' ? { recipient: who.recipient } : {}) });
-    out.versionLabel = `${emailName({ name: v.language_name })}${rid ? ' (saved revision)' : ''}`;
+    const fieldList = await allFields(db);
+    const typeOf = (k: string) => fieldList.find((f) => f.key === k)?.type;
+    // the same rules engine as everywhere else decides which blocks this recipient sees
+    const shown = who.kind === 'recipient' && who.recipient ? visibleBlocks(content.blocks, (f) => (who.recipient as Record<string, string | number | boolean | null | undefined>)[f], typeOf) : content.blocks;
+    const out = await renderEmail({ ...content, blocks: shown }, { baseUrl: config.baseUrl, brand, knownFields, language: { locale: v.locale, direction: v.direction }, ...(who.kind === 'recipient' ? { recipient: who.recipient } : {}) });
+    out.versionLabel = `${emailName({ name: v.language_name })}${rid ? ' (saved revision)' : ''}${shown.length !== content.blocks.length ? ` · ${shown.length} of ${content.blocks.length} blocks` : ''}`;
     return who.kind === 'recipient' ? { ...out, recipientLabel: who.label } : out;
   });
 }

@@ -59,14 +59,21 @@ try {
   await page.getByText('Latest saved: revision 1').waitFor();
   await page.getByRole('button', { name: 'Add Text to the end of the email' }).click();
   await page.getByLabel('Heading', { exact: true }).fill('Autumn offers');
-  await page.getByLabel('Who sees this block').selectOption('some');
-  await page.getByTestId('show-when').getByLabel('Value').fill('UAE'); // a rule: Country is UAE
+  await page.getByRole('button', { name: '＋ Add a show/hide rule' }).click();
+  await page.getByTestId('show-when').getByLabel('Value').fill('UAE'); // Show when Country is UAE ...
+  await page.getByTestId('show-when').getByRole('button', { name: '＋ Add a rule' }).click(); // ... AND
+  await page.getByTestId('show-when').getByLabel('Field').nth(1).selectOption({ label: 'VIP' }); // VIP is yes
+  await page.getByTestId('show-when').getByLabel('Join rule 1 and 2 with').waitFor();
   await page.getByText('All changes saved').waitFor();
   await page.getByRole('button', { name: 'Save revision' }).click();
   await page.getByText('Saved as revision 2.').waitFor();
   ok('English-Email is created, edited with a rule, and saved as revision 2');
 
   await page.getByRole('tab', { name: 'Segments' }).click();
+  const derived = page.getByTestId('derived-segments');
+  await derived.getByText('UAE VIP English Segment').waitFor(); // the rule made segments
+  await derived.getByText('Not UAE English Segment').waitFor();
+  ok('rules in English-Email create the segments UAE VIP English and Not UAE English');
   await page.getByLabel('Create German-Email from').selectOption({ label: 'English-Email' });
   await page.getByTestId('email-title').getByText('German-Email').waitFor();
   await page.getByTestId('cond-badge').getByText(/Only when .* UAE/).waitFor({ state: 'attached' }); // the rule came along
@@ -86,6 +93,15 @@ try {
   await page.locator('[data-block-type="text"]').last().click();
   assert((await page.getByLabel('Heading', { exact: true }).inputValue()) === 'Autumn offers', 'English is unchanged by edits to German');
   ok('the German copy is independent and has its own revision numbers');
+
+  // ---- test audiences follow the rules, in every language
+  await page.getByRole('tab', { name: 'Audiences' }).click();
+  await page.getByRole('heading', { name: /^English/ }).waitFor();
+  const cards = page.getByTestId('audience-card');
+  for (const n of ['en-Audience', 'UAE VIP English-Audience', 'Not UAE English-Audience', 'de-Audience', 'UAE VIP German-Audience', 'Not UAE German-Audience']) await cards.filter({ hasText: n }).first().waitFor();
+  assert((await cards.filter({ hasText: 'UAE VIP English-Audience' }).first().innerText()).includes('1 hidden') === false, 'the UAE VIP audience is shown the rule block');
+  assert((await cards.filter({ hasText: 'Not UAE English-Audience' }).first().innerText()).includes('1 hidden'), 'the Not UAE audience has the rule block hidden');
+  ok('test audiences: a baseline per language and shown / hidden audiences for the rules, copied with the German email');
 
   // ---- Arabic is cloned from German (any saved email can be the source) and renders right to left
   await page.getByRole('tab', { name: 'Segments' }).click();
