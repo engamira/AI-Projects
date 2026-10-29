@@ -89,7 +89,8 @@ export function authRoutes(app: FastifyInstance, db: Db, config: AppConfig): voi
   // ---- who am I ----
   app.get('/api/auth/me', { config: { access: 'public' } }, async (req): Promise<MeResponse> => {
     const a = req.auth;
-    if (!a) return { stage: 'none' };
+    const off = config.twoStep ? {} : { twoStepOff: true };
+    if (!a) return { stage: 'none', ...off };
     const user = {
       id: a.user.id,
       email: a.user.email,
@@ -98,9 +99,9 @@ export function authRoutes(app: FastifyInstance, db: Db, config: AppConfig): voi
       capabilities: [...ROLE_CAPABILITIES[a.user.role]],
     };
     if (a.stage === 'password') {
-      return { stage: 'password', csrfToken: a.csrfToken, user, next: a.user.hasTotp ? 'verify_2fa' : 'enroll_2fa' };
+      return { stage: 'password', csrfToken: a.csrfToken, user, next: a.user.hasTotp ? 'verify_2fa' : 'enroll_2fa', ...off };
     }
-    return { stage: 'full', csrfToken: a.csrfToken, user };
+    return { stage: 'full', csrfToken: a.csrfToken, user, ...off };
   });
 
   // ---- step 1: password ----
@@ -122,6 +123,17 @@ export function authRoutes(app: FastifyInstance, db: Db, config: AppConfig): voi
     if (!(await verifyPassword(user.password_hash, body.password))) {
       await registerFailure(user.id);
       return invalid();
+    }
+
+    if (!config.twoStep) {
+      // TESTING ONLY (TWO_STEP_LOGIN=off): the password alone signs in. Every sign-in is recorded as such.
+      await db.query(`DELETE FROM auth_session WHERE user_id = $1 AND stage = 'password'`, [user.id]);
+      const full = await createSession(db, user.id, 'full');
+      await db.query('UPDATE app_user SET last_login_at = now(), failed_attempts = 0, locked_until = NULL WHERE id = $1', [user.id]);
+      await logActivity(db, { actorId: user.id, action: 'auth.login', entityType: 'user', entityId: user.id, details: { twoStep: false } });
+      setSessionCookie(reply, config, full.token, full.maxAgeMs);
+      const done: LoginResponse = { next: 'done' };
+      return done;
     }
 
     // Any older sessions of this browser/user at the partial stage are replaced.

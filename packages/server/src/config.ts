@@ -15,6 +15,8 @@ export type AppConfig = {
   secretKey: Buffer; // 32 bytes; encrypts TOTP secrets at rest
   production: boolean;
   rateLimit: boolean;
+  /** Two-step sign-in (password + authenticator code). Required unless TWO_STEP_LOGIN=off, which is for testing only. */
+  twoStep: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -28,5 +30,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     secretKey: Buffer.from(hex, 'hex'),
     production,
     rateLimit: env.NODE_ENV !== 'test',
+    twoStep: env.TWO_STEP_LOGIN !== 'off',
   };
 }

@@ -67,9 +67,11 @@ export type MeResponse = {
   user?: SessionUser;
   /** Only for stage "password": what the user must do next. */
   next?: 'enroll_2fa' | 'verify_2fa';
+  /** True while two-step sign-in is switched off for testing: the app says so on every screen. */
+  twoStepOff?: boolean;
 };
 
-export type LoginResponse = { next: 'enroll_2fa' | 'verify_2fa' };
+export type LoginResponse = { next: 'enroll_2fa' | 'verify_2fa' | 'done' };
 
 export type EnrollStartResponse = { otpauthUrl: string; qrDataUrl: string; secret: string };
 export type EnrollConfirmResponse = { recoveryCodes: string[] };

@@ -22,7 +22,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 export function LoginPage() {
-  const { refresh } = useSession();
+  const { refresh, me } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -45,6 +45,7 @@ export function LoginPage() {
   return (
     <Card title="Sign in">
       <p className="muted">Email Lego is invite-only. Ask an Admin if you need an account.</p>
+      {me?.twoStepOff && <p className="testing-note" role="status">Testing mode: signing in needs only your password. Two-step sign-in is switched off.</p>}
       <form onSubmit={submit}>
         <label htmlFor="email">Email</label>
         <input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />

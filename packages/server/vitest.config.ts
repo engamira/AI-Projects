@@ -14,5 +14,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 60_000,
     include: ['src/**/*.test.ts'],
+    // every test file builds its own schema on the hosted database: fewer at once keeps its connections from dropping
+    maxWorkers: 3,
   },
 });

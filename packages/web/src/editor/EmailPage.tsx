@@ -71,9 +71,18 @@ function EmailPage({ campaign }: { campaign: CampaignDto }) {
           <Link to="/" className="back">← Emails</Link>
           <input className="name-input" aria-label="Email name" value={name} readOnly={!can('campaign.edit')} maxLength={120} onChange={(e) => setName(e.target.value)} onBlur={() => can('campaign.edit') && void rename()} />
           <span className={`badge status-${campaignStatus(campaign.status).tone}`} title={campaignStatus(campaign.status).hint}>{campaignStatus(campaign.status).label}</span>
-          <div role="tablist" className="tabs">
+          <div role="tablist" aria-label="Sections of this email" className="tabs" onKeyDown={(e) => {
+            // arrow keys, Home and End move between the tabs (the way a tab strip works with a keyboard)
+            const usable = TABS.filter((x) => x.ready);
+            const at = usable.findIndex((x) => x.id === tab);
+            const next = e.key === 'ArrowRight' ? usable[(at + 1) % usable.length] : e.key === 'ArrowLeft' ? usable[(at - 1 + usable.length) % usable.length] : e.key === 'Home' ? usable[0] : e.key === 'End' ? usable[usable.length - 1] : undefined;
+            if (!next) return;
+            e.preventDefault();
+            go(next.id);
+            requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[role="tab"][data-tab="${next.id}"]`)?.focus());
+          }}>
             {TABS.map((t) => (
-              <button key={t.id} role="tab" aria-selected={tab === t.id} disabled={!t.ready} title={t.ready ? undefined : 'Coming in a later phase'} className={tab === t.id ? 'active' : ''} onClick={() => go(t.id)}>
+              <button key={t.id} role="tab" data-tab={t.id} tabIndex={tab === t.id ? 0 : -1} aria-selected={tab === t.id} disabled={!t.ready} title={t.ready ? undefined : 'Coming in a later phase'} className={tab === t.id ? 'active' : ''} onClick={() => go(t.id)}>
                 {t.label}
               </button>
             ))}
@@ -524,7 +533,7 @@ function VersionsTab({ emails, lang, canEdit, canSubmit, refresh, go }: { emails
 
   return (
     <div className="audience-pane">
-      <div className="lang-bar" role="group" aria-label="Language" style={{ margin: '0 -16px 12px' }}>
+      <div className="lang-bar bleed" role="group" aria-label="Language">
         {withEmail.map((l) => (
           <button key={l.id} type="button" className="lang-chip" aria-pressed={current.id === l.id} onClick={() => go('versions', l.id)}>{l.name}</button>
         ))}

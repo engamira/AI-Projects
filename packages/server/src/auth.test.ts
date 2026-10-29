@@ -9,6 +9,34 @@ beforeAll(async () => {
 });
 afterAll(() => t.close());
 
+describe('testing mode (TWO_STEP_LOGIN=off)', () => {
+  it('is off by default: the password alone only gets a partial session', async () => {
+    const u = await t.seedUser('builder', { totp: true });
+    const c = t.client();
+    expect((await c.post('/api/auth/login', { email: u.email, password: u.password })).body).toEqual({ next: 'verify_2fa' });
+    const me = (await c.get('/api/auth/me')).body;
+    expect(me.stage).toBe('password');
+    expect(me.twoStepOff).toBeUndefined();
+  });
+
+  it('when switched off, the password alone signs in, everyone is told, and each sign-in is recorded as such', async () => {
+    t.config.twoStep = false;
+    try {
+      const u = await t.seedUser('qa_reviewer'); // no authenticator needed
+      const c = t.client();
+      expect((await c.get('/api/auth/me')).body).toMatchObject({ stage: 'none', twoStepOff: true });
+      expect((await c.post('/api/auth/login', { email: u.email, password: 'wrong wrong wrong' })).status).toBe(401); // the password is still checked
+      expect((await c.post('/api/auth/login', { email: u.email, password: u.password })).body).toEqual({ next: 'done' });
+      expect((await c.get('/api/auth/me')).body).toMatchObject({ stage: 'full', twoStepOff: true, user: { role: 'qa_reviewer' } });
+      expect((await c.get('/api/library/blocks')).status).toBe(200); // a full session
+      const logged = (await t.db.query("SELECT details FROM activity_log WHERE action = 'auth.login' AND actor_user_id = $1", [u.id])).rows[0];
+      expect(logged.details).toMatchObject({ twoStep: false });
+    } finally {
+      t.config.twoStep = true;
+    }
+  });
+});
+
 describe('password step', () => {
   it('gives the same answer for a wrong password and an unknown email', async () => {
     const u = await t.seedUser('builder', { totp: true });

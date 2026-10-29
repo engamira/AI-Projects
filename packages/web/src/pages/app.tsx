@@ -75,6 +75,8 @@ function Bell() {
 function Topbar() {
   const { me, can, signOut } = useSession();
   return (
+      <>
+      {me?.twoStepOff && <div className="testing-banner" role="status" data-testid="two-step-off">Testing mode: two-step sign-in is switched off. Anyone with a password can sign in. Do not use real customer data.</div>}
       <header className="topbar">
         <NavLink to="/" end className="brand" aria-label="Email Lego, home">
           <svg className="brand-mark" viewBox="0 0 48 40" width="44" height="37" aria-hidden="true" focusable="false">
@@ -101,6 +103,7 @@ function Topbar() {
         <Bell />
         <button onClick={() => void signOut()}>Sign out</button>
       </header>
+      </>
   );
 }
 
